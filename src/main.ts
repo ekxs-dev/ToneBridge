@@ -5,7 +5,13 @@ import { probeDecoderAdapters, probeFfmpegWasmAdapter, type DecoderAdapterProbe 
 import { analyzeMp4HevcSamples, parseLengthPrefixedHevcSample } from './core/hevc';
 import { parseMediaFile, type ParsedMediaSource } from './core/media-source';
 import type { Mp4VideoTrack } from './core/mp4';
-import { convertI420P10ToSdrPreview, createI420P10Frame, type SdrPreviewImage } from './core/raw-frame';
+import {
+  convertI420P10ToLumaPreview,
+  convertI420P10ToSdrPreview,
+  createI420P10Frame,
+  type RawPreviewMode,
+  type SdrPreviewImage,
+} from './core/raw-frame';
 import type { DecodedFrameProbe } from './core/webcodecs';
 
 const app = document.querySelector<HTMLDivElement>('#app');
@@ -118,6 +124,7 @@ function renderBench() {
     sdrPreview: null as null | {
       width: number;
       height: number;
+      mode: RawPreviewMode;
       seekSeconds: number;
       decodeElapsedMs: number;
       averageRgb: [number, number, number];
@@ -179,6 +186,10 @@ function renderBench() {
             <span>Benchmark timings remain synthetic until decode pipeline is connected</span>
           </div>
           <canvas id="sdr-preview" class="sdr-preview" width="960" height="402" aria-label="SDR debug preview"></canvas>
+          <div class="mode-toggle" role="group" aria-label="Preview mode">
+            <button class="mode-button active" type="button" data-preview-mode="raw-luma">Raw luma</button>
+            <button class="mode-button" type="button" data-preview-mode="sdr-approx">PQ SDR approx</button>
+          </div>
           <div class="preview-controls" aria-label="SDR preview time controls">
             <label class="time-slider" for="sdr-preview-time">
               <span>SDR preview time</span>
@@ -190,8 +201,8 @@ function renderBench() {
             </label>
           </div>
           <div class="viewer-meta" id="sdr-preview-meta">
-            <span>SDR debug preview waiting</span>
-            <span>ffmpeg.wasm I420P10 → CPU PQ/BT.2020 approximation</span>
+            <span>Debug preview waiting</span>
+            <span>Raw luma diagnostic from ffmpeg.wasm I420P10</span>
           </div>
         </div>
       </section>
@@ -226,9 +237,11 @@ function renderBench() {
   const sdrPreviewMeta = document.querySelector<HTMLElement>('#sdr-preview-meta');
   const previewTimeRange = document.querySelector<HTMLInputElement>('#sdr-preview-time');
   const previewSecondsInput = document.querySelector<HTMLInputElement>('#sdr-preview-seconds');
+  const previewModeButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-preview-mode]')];
   let activeTrack: Mp4VideoTrack | null = null;
   let selectionVersion = 0;
   let isRenderingRawPreview = false;
+  let previewMode: RawPreviewMode = 'raw-luma';
 
   const updateReport = () => {
     if (reportJson) {
@@ -292,14 +305,30 @@ function renderBench() {
     return clampPreviewSeconds(Number(previewSecondsInput?.value ?? previewTimeRange?.value ?? 0));
   }
 
+  const previewModeLabel = (mode: RawPreviewMode) => (mode === 'raw-luma' ? 'Raw luma diagnostic' : 'PQ SDR approximation');
+
+  const setPreviewMode = (mode: RawPreviewMode) => {
+    previewMode = mode;
+    for (const button of previewModeButtons) {
+      button.classList.toggle('active', button.dataset.previewMode === mode);
+    }
+  };
+
+  const convertRawFrameForPreview = (data: Uint8Array, track: Mp4VideoTrack, mode: RawPreviewMode) => {
+    const frame = createI420P10Frame(data, track.width, track.height, 'full');
+    return mode === 'raw-luma'
+      ? convertI420P10ToLumaPreview(frame)
+      : convertI420P10ToSdrPreview(frame);
+  };
+
   const clearSdrPreview = () => {
     if (!sdrPreviewCanvas) return;
     const ctx = sdrPreviewCanvas.getContext('2d');
     if (!ctx) return;
     ctx.clearRect(0, 0, sdrPreviewCanvas.width, sdrPreviewCanvas.height);
     updateSdrPreviewStatus([
-      'SDR debug preview waiting',
-      'ffmpeg.wasm I420P10 -> CPU PQ/BT.2020 approximation',
+      'Debug preview waiting',
+      `${previewModeLabel(previewMode)} from ffmpeg.wasm I420P10`,
     ]);
   };
 
@@ -312,7 +341,7 @@ function renderBench() {
     }));
   };
 
-  const drawSdrPreview = (preview: SdrPreviewImage, seekSeconds: number, decodeElapsedMs: number) => {
+  const drawSdrPreview = (preview: SdrPreviewImage, mode: RawPreviewMode, seekSeconds: number, decodeElapsedMs: number) => {
     if (!sdrPreviewCanvas) return;
     sdrPreviewCanvas.width = preview.width;
     sdrPreviewCanvas.height = preview.height;
@@ -322,6 +351,7 @@ function renderBench() {
     report.sdrPreview = {
       width: preview.width,
       height: preview.height,
+      mode,
       seekSeconds,
       decodeElapsedMs,
       averageRgb: preview.stats.averageRgb,
@@ -329,7 +359,7 @@ function renderBench() {
     };
     if (sdrPreviewMeta) {
       sdrPreviewMeta.innerHTML = `
-        <span>SDR debug preview ${preview.width} x ${preview.height} @ ${formatPreviewSeconds(seekSeconds)}</span>
+        <span>${previewModeLabel(mode)} ${preview.width} x ${preview.height} @ ${formatPreviewSeconds(seekSeconds)}</span>
         <span>decode ${decodeElapsedMs.toFixed(1)} ms</span>
         <span>avg RGB ${preview.stats.averageRgb.map((value) => value.toFixed(1)).join(', ')}</span>
         <span>${preview.stats.nonBlackPixels} non-black pixels</span>
@@ -354,8 +384,9 @@ function renderBench() {
     if (ffmpegRawProbe) ffmpegRawProbe.textContent = `Rendering ${formatPreviewSeconds(seekSeconds)}...`;
     updateSdrPreviewStatus([
       `Decoding I420P10 frame at ${formatPreviewSeconds(seekSeconds)} with ffmpeg.wasm`,
+      previewModeLabel(previewMode),
       `${track.width} x ${track.height}`,
-      'Rendering SDR debug preview',
+      'Rendering debug preview',
     ]);
     updateReport();
 
@@ -372,8 +403,8 @@ function renderBench() {
 
     const rawFrame = ffmpegWasm.rawFrame;
     if (rawFrame.ok && rawFrame.data) {
-      const preview = convertI420P10ToSdrPreview(createI420P10Frame(rawFrame.data, track.width, track.height, 'full'));
-      drawSdrPreview(preview, rawFrame.seekSeconds, rawFrame.elapsedMs);
+      const preview = convertRawFrameForPreview(rawFrame.data, track, previewMode);
+      drawSdrPreview(preview, previewMode, rawFrame.seekSeconds, rawFrame.elapsedMs);
     } else {
       updateSdrPreviewStatus([
         'SDR debug preview failed',
@@ -517,6 +548,7 @@ function renderBench() {
     activeTrack = null;
     report.parseError = null;
     isRenderingRawPreview = false;
+    setPreviewMode('raw-luma');
     if (ffmpegRawProbe) ffmpegRawProbe.textContent = 'Render selected SDR frame';
     writePreviewSeconds(0, false);
     updatePreviewControlsMax();
@@ -628,6 +660,27 @@ function renderBench() {
   previewSecondsInput?.addEventListener('change', () => {
     void requestPreviewAtSelectedTime('Manual ffmpeg.wasm raw-frame probe requested from seconds input.');
   });
+
+  for (const button of previewModeButtons) {
+    button.addEventListener('click', () => {
+      const mode = button.dataset.previewMode;
+      if (mode !== 'raw-luma' && mode !== 'sdr-approx') return;
+      setPreviewMode(mode);
+
+      const track = activeTrack;
+      const rawFrame = report.decoderAdapter?.ffmpegWasm?.rawFrame;
+      if (track && rawFrame?.ok && rawFrame.data) {
+        const preview = convertRawFrameForPreview(rawFrame.data, track, previewMode);
+        drawSdrPreview(preview, previewMode, rawFrame.seekSeconds, rawFrame.elapsedMs);
+        updateReport();
+      } else {
+        updateSdrPreviewStatus([
+          'Debug preview waiting',
+          `${previewModeLabel(previewMode)} from ffmpeg.wasm I420P10`,
+        ]);
+      }
+    });
+  }
 
   video?.addEventListener('loadedmetadata', () => {
     if (!video || !report.selectedVideo || !videoMeta) return;

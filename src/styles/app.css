@@ -133,6 +133,32 @@ video {
   margin-top: 18px;
 }
 
+.mode-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 14px;
+  border: 2px solid #18201f;
+}
+
+.mode-button {
+  min-height: 40px;
+  border: 0;
+  border-right: 2px solid #18201f;
+  background: #edf4ee;
+  color: #18201f;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.mode-button:last-child {
+  border-right: 0;
+}
+
+.mode-button.active {
+  background: #18201f;
+  color: #f3f0e8;
+}
+
 .preview-controls {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 132px;

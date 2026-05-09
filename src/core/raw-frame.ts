@@ -30,6 +30,8 @@ export interface SdrPreviewImage {
   };
 }
 
+export type RawPreviewMode = 'sdr-approx' | 'raw-luma';
+
 export function expectedI420P10ByteLength(width: number, height: number): number {
   const chromaWidth = Math.ceil(width / 2);
   const chromaHeight = Math.ceil(height / 2);
@@ -131,6 +133,45 @@ export function convertI420P10ToSdrPreview(frame: I420P10Frame, maxWidth = 960):
     data: pixels,
     stats: {
       averageRgb: [totalR / count, totalG / count, totalB / count],
+      nonBlackPixels,
+    },
+  };
+}
+
+export function convertI420P10ToLumaPreview(frame: I420P10Frame, maxWidth = 960): SdrPreviewImage {
+  const width = Math.max(1, Math.min(frame.width, maxWidth));
+  const height = Math.max(1, Math.round((width / frame.width) * frame.height));
+  const pixels = new Uint8ClampedArray(width * height * 4);
+  const scaleX = frame.width / width;
+  const scaleY = frame.height / height;
+  let total = 0;
+  let nonBlackPixels = 0;
+
+  for (let y = 0; y < height; y += 1) {
+    const sourceY = Math.min(frame.height - 1, Math.floor(y * scaleY));
+    for (let x = 0; x < width; x += 1) {
+      const sourceX = Math.min(frame.width - 1, Math.floor(x * scaleX));
+      const ySample = readU16LE(frame.data, frame.yOffset + sourceY * frame.yStride + sourceX) & 0x03ff;
+      const yCode = normalizeYuv10Sample(ySample, frame.range, 'y');
+      const value = Math.round(srgbEncode(yCode) * 255);
+      const offset = (y * width + x) * 4;
+      pixels[offset] = value;
+      pixels[offset + 1] = value;
+      pixels[offset + 2] = value;
+      pixels[offset + 3] = 255;
+      total += value;
+      if (value > 2) nonBlackPixels += 1;
+    }
+  }
+
+  const count = width * height;
+  const average = total / count;
+  return {
+    width,
+    height,
+    data: pixels,
+    stats: {
+      averageRgb: [average, average, average],
       nonBlackPixels,
     },
   };
