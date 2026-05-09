@@ -1,4 +1,5 @@
 import type { Mp4Sample, Mp4VideoTrack } from './mp4';
+import { validateI420P10CopyLayout, type PlaneLayoutLike } from './video-frame-layout';
 
 export interface EncodedChunkPlan {
   type: EncodedVideoChunkType;
@@ -19,6 +20,16 @@ export interface DecodedFrameProbe {
   displayWidth: number | null;
   displayHeight: number | null;
   colorSpace: Record<string, unknown> | null;
+  copyTo: FrameCopyProbe | null;
+  error: string | null;
+}
+
+export interface FrameCopyProbe {
+  attempted: boolean;
+  ok: boolean;
+  elapsedMs: number;
+  allocationSize: number | null;
+  layout: PlaneLayoutLike[];
   error: string | null;
 }
 
@@ -83,6 +94,7 @@ export async function decodeFirstFrameFromMp4Track(
     displayWidth: null,
     displayHeight: null,
     colorSpace: null,
+    copyTo: null,
     error: null,
   });
 
@@ -109,15 +121,19 @@ export async function decodeFirstFrameFromMp4Track(
   let decodedFrames = 0;
   const frameProbes: Pick<
     DecodedFrameProbe,
-    'format' | 'timestamp' | 'codedWidth' | 'codedHeight' | 'displayWidth' | 'displayHeight' | 'colorSpace'
+    'format' | 'timestamp' | 'codedWidth' | 'codedHeight' | 'displayWidth' | 'displayHeight' | 'colorSpace' | 'copyTo'
   >[] = [];
+  const copyTasks: Promise<void>[] = [];
   let decoderError: string | null = null;
   const decoder = new VideoDecoder({
     output: (frame) => {
       decodedFrames += 1;
       if (frameProbes.length === 0) {
         const colorSpace = frame.colorSpace?.toJSON?.() as Record<string, unknown> | undefined;
-        frameProbes.push({
+        const probe: Pick<
+          DecodedFrameProbe,
+          'format' | 'timestamp' | 'codedWidth' | 'codedHeight' | 'displayWidth' | 'displayHeight' | 'colorSpace' | 'copyTo'
+        > = {
           format: frame.format,
           timestamp: frame.timestamp,
           codedWidth: frame.codedWidth,
@@ -125,7 +141,15 @@ export async function decodeFirstFrameFromMp4Track(
           displayWidth: frame.displayWidth,
           displayHeight: frame.displayHeight,
           colorSpace: colorSpace ?? null,
-        });
+          copyTo: null,
+        };
+        frameProbes.push(probe);
+        copyTasks.push(probeFrameCopyTo(frame).then((copyTo) => {
+          probe.copyTo = copyTo;
+        }).finally(() => {
+          frame.close();
+        }));
+        return;
       }
       frame.close();
     },
@@ -140,6 +164,7 @@ export async function decodeFirstFrameFromMp4Track(
       decoder.decode(createEncodedVideoChunk(fileBytes, sample, track));
     }
     await decoder.flush();
+    await Promise.all(copyTasks);
   } catch (error) {
     decoderError = error instanceof Error ? error.message : String(error);
   } finally {
@@ -171,6 +196,50 @@ export async function decodeFirstFrameFromMp4Track(
     displayWidth: firstFrame.displayWidth,
     displayHeight: firstFrame.displayHeight,
     colorSpace: firstFrame.colorSpace,
+    copyTo: firstFrame.copyTo,
     error: decoderError,
   };
+}
+
+async function probeFrameCopyTo(frame: VideoFrame): Promise<FrameCopyProbe> {
+  const startedAt = performance.now();
+  if (String(frame.format) !== 'I420P10') {
+    return {
+      attempted: false,
+      ok: false,
+      elapsedMs: performance.now() - startedAt,
+      allocationSize: null,
+      layout: [],
+      error: `copyTo raw path requires I420P10, got ${frame.format ?? 'null'}.`,
+    };
+  }
+
+  try {
+    const allocationSize = frame.allocationSize();
+    const buffer = new ArrayBuffer(allocationSize);
+    const layout = await frame.copyTo(buffer);
+    const normalizedLayout = layout.map((plane) => ({ offset: plane.offset, stride: plane.stride }));
+    validateI420P10CopyLayout(normalizedLayout, {
+      width: frame.visibleRect?.width ?? frame.codedWidth,
+      height: frame.visibleRect?.height ?? frame.codedHeight,
+    }, allocationSize);
+
+    return {
+      attempted: true,
+      ok: true,
+      elapsedMs: performance.now() - startedAt,
+      allocationSize,
+      layout: normalizedLayout,
+      error: null,
+    };
+  } catch (error) {
+    return {
+      attempted: true,
+      ok: false,
+      elapsedMs: performance.now() - startedAt,
+      allocationSize: null,
+      layout: [],
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }

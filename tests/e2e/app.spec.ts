@@ -52,4 +52,5 @@ test('benchmark page parses a selected MP4 fixture', async ({ page }) => {
   expect(parsed.mp4.track.codecType).toBe('hev1');
   expect(parsed.mp4.track.totalRpuNalUnits).toBe(154);
   expect(parsed.webCodecs).not.toBeNull();
+  expect(parsed.webCodecs).toHaveProperty('copyTo');
 });

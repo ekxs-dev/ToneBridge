@@ -88,6 +88,7 @@ npm run test:rust
 - [x] Add HEVC sample scanning for MP4 fixtures and surface RPU NAL counts in `/bench`.
 - [x] Implement real MP4 demux metadata for HEVC samples and codec string extraction.
 - [x] Feed MP4 samples into WebCodecs `VideoDecoder` for first-frame probing.
+- [x] Probe `VideoFrame.copyTo()` on the first decoded frame and report I420P10 layout status.
 - [ ] Add MKV demux support or a WASM-backed MKV adapter.
 - [ ] Validate real `VideoFrame.format === "I420P10"` and `VideoFrame.colorSpace`.
 - [ ] Copy real `VideoFrame` planes with `copyTo()` and upload Y/U/V data to WebGPU.

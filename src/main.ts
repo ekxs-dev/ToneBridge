@@ -150,6 +150,7 @@ function renderBench() {
             <dt>frame</dt><dd>unknown</dd>
             <dt>format</dt><dd>unknown</dd>
             <dt>color</dt><dd>unknown</dd>
+            <dt>copyTo</dt><dd>unknown</dd>
           </dl>
         </div>
         <div class="video-frame">
@@ -232,6 +233,7 @@ function renderBench() {
         <dt>frame</dt><dd>waiting for decoder</dd>
         <dt>format</dt><dd>unknown</dd>
         <dt>color</dt><dd>unknown</dd>
+        <dt>copyTo</dt><dd>waiting</dd>
       `;
       return;
     }
@@ -241,17 +243,24 @@ function renderBench() {
         <dt>frame</dt><dd>unknown</dd>
         <dt>format</dt><dd>unknown</dd>
         <dt>color</dt><dd>unknown</dd>
+        <dt>copyTo</dt><dd>unknown</dd>
       `;
       return;
     }
     const color = probe.colorSpace
       ? `${probe.colorSpace.primaries ?? 'unknown'} / ${probe.colorSpace.transfer ?? 'unknown'} / ${probe.colorSpace.matrix ?? 'unknown'}`
       : 'unknown';
+    const copyTo = probe.copyTo
+      ? probe.copyTo.ok
+        ? `${probe.copyTo.allocationSize} bytes, ${probe.copyTo.layout.length} planes, ${probe.copyTo.elapsedMs.toFixed(1)} ms`
+        : probe.copyTo.error
+      : 'not attempted';
     decodeMeta.innerHTML = `
       <dt>support</dt><dd>${probe.supported ? 'supported' : 'not supported'}${probe.error ? `: ${probe.error}` : ''}</dd>
       <dt>frame</dt><dd>${probe.decodedFrames} decoded in ${probe.elapsedMs.toFixed(1)} ms</dd>
       <dt>format</dt><dd>${probe.format ?? 'unknown'} ${probe.codedWidth && probe.codedHeight ? `${probe.codedWidth} x ${probe.codedHeight}` : ''}</dd>
       <dt>color</dt><dd>${color}</dd>
+      <dt>copyTo</dt><dd>${copyTo}</dd>
     `;
   };
 
