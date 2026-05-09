@@ -24,6 +24,7 @@ test('benchmark page emits a JSON timing report', async ({ page }) => {
   await page.goto('/bench');
   await expect(page.getByText('Pipeline timing report')).toBeVisible();
   await expect(page.getByText('Video preview')).toBeVisible();
+  await expect(page.getByText('WebCodecs probe')).toBeVisible();
   await expect(page.locator('#video-file')).toBeAttached();
   await expect(page.locator('#bench-video')).toBeVisible();
   await expect(page.getByRole('rowheader', { name: 'copyTo' })).toBeVisible();
@@ -42,6 +43,7 @@ test('benchmark page parses a selected MP4 fixture', async ({ page }) => {
   await expect(page.locator('#track-meta')).toContainText(/hev1\.2\./);
   await expect(page.locator('#track-meta')).toContainText('154 (2 sync)');
   await expect(page.locator('#track-meta')).toContainText('154 total');
+  await expect(page.locator('#decode-meta')).not.toContainText('not run');
 
   const report = await page.locator('#report-json').textContent();
   const parsed = JSON.parse(report ?? '{}');
@@ -49,4 +51,5 @@ test('benchmark page parses a selected MP4 fixture', async ({ page }) => {
   expect(parsed.mp4.track.sampleCount).toBe(154);
   expect(parsed.mp4.track.codecType).toBe('hev1');
   expect(parsed.mp4.track.totalRpuNalUnits).toBe(154);
+  expect(parsed.webCodecs).not.toBeNull();
 });

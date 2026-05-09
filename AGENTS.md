@@ -86,8 +86,9 @@ npm run test:rust
 ## TODO
 - [x] Add real MP4 track/sample metadata parser for benchmark file selection.
 - [x] Add HEVC sample scanning for MP4 fixtures and surface RPU NAL counts in `/bench`.
-- [ ] Implement real MP4/MKV demux for HEVC samples and codec string extraction.
-- [ ] Feed demuxed samples into WebCodecs `VideoDecoder`.
+- [x] Implement real MP4 demux metadata for HEVC samples and codec string extraction.
+- [x] Feed MP4 samples into WebCodecs `VideoDecoder` for first-frame probing.
+- [ ] Add MKV demux support or a WASM-backed MKV adapter.
 - [ ] Validate real `VideoFrame.format === "I420P10"` and `VideoFrame.colorSpace`.
 - [ ] Copy real `VideoFrame` planes with `copyTo()` and upload Y/U/V data to WebGPU.
 - [ ] Replace Rust placeholder RPU parsing with full libdovi/dovi_tool-compatible metadata extraction.

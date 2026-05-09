@@ -3,6 +3,7 @@ import { createSyntheticBenchmark, summarizeBenchmark } from './core/benchmark';
 import { evaluateCapabilities, probeBrowserCapabilities } from './core/capabilities';
 import { analyzeMp4HevcSamples, parseLengthPrefixedHevcSample } from './core/hevc';
 import { parseMp4, type Mp4VideoTrack } from './core/mp4';
+import { decodeFirstFrameFromMp4Track, type DecodedFrameProbe } from './core/webcodecs';
 
 const app = document.querySelector<HTMLDivElement>('#app');
 
@@ -105,6 +106,7 @@ function renderBench() {
         totalRpuNalUnits: number;
       };
     },
+    webCodecs: null as DecodedFrameProbe | null,
     parseError: null as string | null,
     summary,
   };
@@ -142,6 +144,13 @@ function renderBench() {
             <dt>samples</dt><dd>0</dd>
             <dt>RPU NAL</dt><dd>unknown</dd>
           </dl>
+          <h2 class="subhead">WebCodecs probe</h2>
+          <dl class="debug-list compact" id="decode-meta">
+            <dt>support</dt><dd>not run</dd>
+            <dt>frame</dt><dd>unknown</dd>
+            <dt>format</dt><dd>unknown</dd>
+            <dt>color</dt><dd>unknown</dd>
+          </dl>
         </div>
         <div class="video-frame">
           <video id="bench-video" controls muted playsinline preload="metadata"></video>
@@ -175,6 +184,7 @@ function renderBench() {
   const selectedName = document.querySelector<HTMLElement>('#selected-name');
   const videoMeta = document.querySelector<HTMLElement>('#video-meta');
   const trackMeta = document.querySelector<HTMLElement>('#track-meta');
+  const decodeMeta = document.querySelector<HTMLElement>('#decode-meta');
   const reportJson = document.querySelector<HTMLElement>('#report-json');
 
   const updateReport = () => {
@@ -214,6 +224,37 @@ function renderBench() {
     `;
   };
 
+  const updateDecodeMeta = (probe: DecodedFrameProbe | null, pending = false) => {
+    if (!decodeMeta) return;
+    if (pending) {
+      decodeMeta.innerHTML = `
+        <dt>support</dt><dd>probing</dd>
+        <dt>frame</dt><dd>waiting for decoder</dd>
+        <dt>format</dt><dd>unknown</dd>
+        <dt>color</dt><dd>unknown</dd>
+      `;
+      return;
+    }
+    if (!probe) {
+      decodeMeta.innerHTML = `
+        <dt>support</dt><dd>not run</dd>
+        <dt>frame</dt><dd>unknown</dd>
+        <dt>format</dt><dd>unknown</dd>
+        <dt>color</dt><dd>unknown</dd>
+      `;
+      return;
+    }
+    const color = probe.colorSpace
+      ? `${probe.colorSpace.primaries ?? 'unknown'} / ${probe.colorSpace.transfer ?? 'unknown'} / ${probe.colorSpace.matrix ?? 'unknown'}`
+      : 'unknown';
+    decodeMeta.innerHTML = `
+      <dt>support</dt><dd>${probe.supported ? 'supported' : 'not supported'}${probe.error ? `: ${probe.error}` : ''}</dd>
+      <dt>frame</dt><dd>${probe.decodedFrames} decoded in ${probe.elapsedMs.toFixed(1)} ms</dd>
+      <dt>format</dt><dd>${probe.format ?? 'unknown'} ${probe.codedWidth && probe.codedHeight ? `${probe.codedWidth} x ${probe.codedHeight}` : ''}</dd>
+      <dt>color</dt><dd>${color}</dd>
+    `;
+  };
+
   fileInput?.addEventListener('change', async () => {
     const file = fileInput.files?.[0];
     if (!file || !video) return;
@@ -231,7 +272,9 @@ function renderBench() {
       height: null,
     };
     report.mp4 = null;
+    report.webCodecs = null;
     report.parseError = null;
+    updateDecodeMeta(null);
 
     if (videoMeta) {
       videoMeta.innerHTML = `
@@ -278,9 +321,15 @@ function renderBench() {
         firstSampleRpuNalUnits: firstSampleAnalysis.rpuNalUnits.length,
         totalRpuNalUnits: fullAnalysis.rpuNalUnits.length,
       } : null);
+      if (track?.hevcConfig) {
+        updateDecodeMeta(null, true);
+        report.webCodecs = await decodeFirstFrameFromMp4Track(fileBytes, track);
+        updateDecodeMeta(report.webCodecs);
+      }
     } catch (error) {
       report.parseError = error instanceof Error ? error.message : String(error);
       updateTrackMeta(null, [], report.parseError);
+      updateDecodeMeta(null);
     }
     updateReport();
   });

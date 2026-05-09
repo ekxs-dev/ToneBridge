@@ -28,6 +28,7 @@ export interface HevcConfigSummary {
   levelIdc: number;
   lengthSize: number;
   codecString: string;
+  description: Uint8Array;
 }
 
 export interface Mp4VideoTrack {
@@ -192,6 +193,7 @@ function parseHvcC(reader: Reader, box: Mp4BoxInfo, brand: 'hvc1' | 'hev1'): Hev
     levelIdc,
     lengthSize,
     codecString,
+    description: reader.data.slice(start, box.end),
   };
 }
 

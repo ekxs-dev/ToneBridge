@@ -28,6 +28,7 @@ describe('MP4 parser', () => {
 
     expect(track.hevcConfig?.lengthSize).toBe(4);
     expect(track.hevcConfig?.codecString).toMatch(/^hev1\.2\./);
+    expect(track.hevcConfig?.description.byteLength).toBeGreaterThan(20);
     expect(track.hasDolbyVisionConfig).toBe(false);
   });
 });
