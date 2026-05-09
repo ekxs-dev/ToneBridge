@@ -12,8 +12,10 @@ export interface I420P10GpuUpload {
   yPlane: Uint32Array;
   uPlane: Uint32Array;
   vPlane: Uint32Array;
+  frameParamsUniform: Uint32Array;
   frameParams: GpuFrameParams;
   storageByteLength: number;
+  totalByteLength: number;
 }
 
 function readU16LE(data: Uint8Array, sampleIndex: number): number {
@@ -38,17 +40,32 @@ export function buildI420P10GpuUpload(frame: I420P10Frame): I420P10GpuUpload {
   const uPlane = copyPlaneToU32(frame, frame.uOffset, frame.uvStride, chromaWidth, chromaHeight);
   const vPlane = copyPlaneToU32(frame, frame.vOffset, frame.uvStride, chromaWidth, chromaHeight);
 
+  const frameParams: GpuFrameParams = {
+    width: frame.width,
+    height: frame.height,
+    yStride: frame.width,
+    uvStride: chromaWidth,
+    range: frame.range === 'full' ? 0 : 1,
+  };
+  const frameParamsUniform = new Uint32Array([
+    frameParams.width,
+    frameParams.height,
+    frameParams.yStride,
+    frameParams.uvStride,
+    frameParams.range,
+    0,
+    0,
+    0,
+  ]);
+  const storageByteLength = yPlane.byteLength + uPlane.byteLength + vPlane.byteLength;
+
   return {
     yPlane,
     uPlane,
     vPlane,
-    frameParams: {
-      width: frame.width,
-      height: frame.height,
-      yStride: frame.width,
-      uvStride: chromaWidth,
-      range: frame.range === 'full' ? 0 : 1,
-    },
-    storageByteLength: yPlane.byteLength + uPlane.byteLength + vPlane.byteLength,
+    frameParamsUniform,
+    frameParams,
+    storageByteLength,
+    totalByteLength: storageByteLength + frameParamsUniform.byteLength,
   };
 }

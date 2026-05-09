@@ -78,7 +78,7 @@ npm run test:rust
 - `/bench` shows selected-time Frame/RPU alignment for parsed samples: sample index, timestamp, RPU count, and first RPU NAL bytes. Large MKV files are still prefix-parsed, so seeks beyond that parsed window report unknown/outside until streaming demux is implemented.
 - When selected time is outside the parsed prefix and ffmpeg.wasm raw preview succeeds, `/bench` also tries a one-packet HEVC copy probe (`hevc_mp4toannexb`) at that time and scans the Annex-B packet for RPU NALs. This is diagnostic fallback, not the final demux strategy.
 - Compact DV metadata ABI is 276 `f32` values with WGSL `vec4` row padding. Keep `src/core/metadata.ts`, `crates/lumabridge_wasm/src/lib.rs`, and `src/gpu/dv-p5-to-sdr.wgsl` aligned.
-- `src/core/gpu-upload.ts` prepares tightly packed `u32` Y/U/V storage-buffer data from I420P10 frames for the current WGSL skeleton; it is not yet wired to a live `GPUDevice`.
+- `src/core/gpu-upload.ts` prepares tightly packed `u32` Y/U/V storage-buffer data from I420P10 frames for the current WGSL skeleton. `/bench` now attempts a live WebGPU buffer upload after ffmpeg.wasm raw-frame decode when WebGPU is available.
 - Rust `parse_rpu_metadata` is currently a placeholder returning identity metadata for valid payloads. Full libdovi/dovi_tool-compatible parsing is still pending.
 - WGSL currently contains a skeleton/reference compute path, not libplacebo-accurate DV reshaping.
 
@@ -108,6 +108,7 @@ npm run test:rust
 - [ ] Replace Rust placeholder RPU parsing with full libdovi/dovi_tool-compatible metadata extraction.
 - [x] Define and freeze the compact metadata buffer ABI between Rust, TypeScript, and WGSL.
 - [x] Add deterministic I420P10 plane upload planning for WebGPU storage buffers.
+- [x] Wire ffmpeg.wasm raw-frame output to a live WebGPU buffer upload probe on `/bench`.
 - [ ] Implement libplacebo-aligned DV polynomial/MMR reshape in WGSL.
 - [ ] Add real SDR frame readback and pixel-error comparison against `sdr_reference.png`.
 - [ ] Replace synthetic benchmark timings with measured demux/decode/copy/upload/shader/present timings.

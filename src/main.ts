@@ -8,6 +8,7 @@ import {
   type DecoderAdapterProbe,
 } from './core/decoder-adapter';
 import { analyzeMp4HevcSamples, parseLengthPrefixedHevcSample } from './core/hevc';
+import { buildI420P10GpuUpload } from './core/gpu-upload';
 import { parseMediaFile, type ParsedMediaSource } from './core/media-source';
 import type { Mp4VideoTrack } from './core/mp4';
 import {
@@ -18,6 +19,7 @@ import {
   type SdrPreviewImage,
 } from './core/raw-frame';
 import { inspectRpuAnnexBPacket, inspectRpuForSeconds, type RpuFrameSelection } from './core/rpu-alignment';
+import { uploadI420P10ToWebGpu, type WebGpuUploadProbe } from './core/webgpu-upload';
 import type { DecodedFrameProbe } from './core/webcodecs';
 
 const app = document.querySelector<HTMLDivElement>('#app');
@@ -128,6 +130,7 @@ function renderBench() {
     webCodecs: null as DecodedFrameProbe | null,
     decoderAdapter: null as DecoderAdapterProbe | null,
     frameRpu: null as RpuFrameSelection | null,
+    gpuUpload: null as WebGpuUploadProbe | null,
     sdrPreview: null as null | {
       width: number;
       height: number;
@@ -192,6 +195,12 @@ function renderBench() {
             <dt>RPU</dt><dd>unknown</dd>
             <dt>first NAL</dt><dd>unknown</dd>
           </dl>
+          <h2 class="subhead">WebGPU upload</h2>
+          <dl class="debug-list compact" id="gpu-upload-meta">
+            <dt>status</dt><dd>waiting</dd>
+            <dt>buffers</dt><dd>unknown</dd>
+            <dt>bytes</dt><dd>unknown</dd>
+          </dl>
         </div>
         <div class="video-frame">
           <video id="bench-video" controls muted playsinline preload="metadata"></video>
@@ -246,6 +255,7 @@ function renderBench() {
   const trackMeta = document.querySelector<HTMLElement>('#track-meta');
   const decodeMeta = document.querySelector<HTMLElement>('#decode-meta');
   const frameRpuMeta = document.querySelector<HTMLElement>('#frame-rpu-meta');
+  const gpuUploadMeta = document.querySelector<HTMLElement>('#gpu-upload-meta');
   const reportJson = document.querySelector<HTMLElement>('#report-json');
   const ffmpegRawProbe = document.querySelector<HTMLButtonElement>('#ffmpeg-raw-probe');
   const sdrPreviewCanvas = document.querySelector<HTMLCanvasElement>('#sdr-preview');
@@ -301,6 +311,25 @@ function renderBench() {
       <dt>RPU</dt><dd>${selection.status}${selection.rpuNalUnits ? `, ${selection.rpuNalUnits} NAL` : ''}</dd>
       <dt>first NAL</dt><dd>${firstNal}</dd>
       ${selection.error ? `<dt>note</dt><dd>${selection.error}</dd>` : ''}
+    `;
+  };
+
+  const updateGpuUploadMeta = (probe: WebGpuUploadProbe | null) => {
+    report.gpuUpload = probe;
+    if (!gpuUploadMeta) return;
+    if (!probe) {
+      gpuUploadMeta.innerHTML = `
+        <dt>status</dt><dd>waiting</dd>
+        <dt>buffers</dt><dd>unknown</dd>
+        <dt>bytes</dt><dd>unknown</dd>
+      `;
+      return;
+    }
+    gpuUploadMeta.innerHTML = `
+      <dt>status</dt><dd>${probe.ok ? 'uploaded' : probe.attempted ? 'failed' : 'unavailable'}${probe.elapsedMs ? ` in ${probe.elapsedMs.toFixed(1)} ms` : ''}</dd>
+      <dt>buffers</dt><dd>${probe.buffers}</dd>
+      <dt>bytes</dt><dd>${probe.bytes ? `${(probe.bytes / 1024 / 1024).toFixed(2)} MB` : '0'}</dd>
+      ${probe.error ? `<dt>note</dt><dd>${probe.error}</dd>` : ''}
     `;
   };
 
@@ -471,7 +500,10 @@ function renderBench() {
     if (rawFrame.ok && rawFrame.data) {
       const preview = convertRawFrameForPreview(rawFrame.data, track, previewMode);
       drawSdrPreview(preview, previewMode, rawFrame.seekSeconds, rawFrame.elapsedMs);
+      const gpuUpload = buildI420P10GpuUpload(createI420P10Frame(rawFrame.data, track.width, track.height, 'full'));
+      updateGpuUploadMeta(await uploadI420P10ToWebGpu(gpuUpload));
     } else {
+      updateGpuUploadMeta(null);
       updateSdrPreviewStatus([
         'SDR debug preview failed',
         `requested ${formatPreviewSeconds(seekSeconds)}`,
@@ -650,6 +682,7 @@ function renderBench() {
     report.webCodecs = null;
     report.decoderAdapter = null;
     report.frameRpu = null;
+    report.gpuUpload = null;
     report.sdrPreview = null;
     activeTrack = null;
     activeParsedSource = null;
@@ -662,6 +695,7 @@ function renderBench() {
     setPreviewControlsDisabled(true);
     clearSdrPreview();
     updateFrameRpuMeta(null);
+    updateGpuUploadMeta(null);
     updateDecodeMeta(null);
     updateReport();
 

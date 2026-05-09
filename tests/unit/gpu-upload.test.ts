@@ -30,7 +30,9 @@ describe('I420P10 WebGPU upload planning', () => {
       uvStride: 2,
       range: 1,
     });
+    expect([...upload.frameParamsUniform]).toEqual([4, 2, 4, 2, 1, 0, 0, 0]);
     expect(upload.storageByteLength).toBe((8 + 2 + 2) * 4);
+    expect(upload.totalByteLength).toBe((8 + 2 + 2 + 8) * 4);
   });
 
   it('masks uploaded samples to the low 10 bits expected by WGSL', () => {
