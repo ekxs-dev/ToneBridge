@@ -85,6 +85,7 @@ npm run test:rust
 
 ## TODO
 - [x] Add real MP4 track/sample metadata parser for benchmark file selection.
+- [x] Add HEVC sample scanning for MP4 fixtures and surface RPU NAL counts in `/bench`.
 - [ ] Implement real MP4/MKV demux for HEVC samples and codec string extraction.
 - [ ] Feed demuxed samples into WebCodecs `VideoDecoder`.
 - [ ] Validate real `VideoFrame.format === "I420P10"` and `VideoFrame.colorSpace`.

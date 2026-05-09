@@ -1,6 +1,7 @@
 import './styles/app.css';
 import { createSyntheticBenchmark, summarizeBenchmark } from './core/benchmark';
 import { evaluateCapabilities, probeBrowserCapabilities } from './core/capabilities';
+import { analyzeMp4HevcSamples, parseLengthPrefixedHevcSample } from './core/hevc';
 import { parseMp4, type Mp4VideoTrack } from './core/mp4';
 
 const app = document.querySelector<HTMLDivElement>('#app');
@@ -99,6 +100,9 @@ function renderBench() {
         firstSampleBytes: number;
         hasDolbyVisionConfig: boolean;
         lengthSize: number | null;
+        firstSampleNalUnits: number;
+        firstSampleRpuNalUnits: number;
+        totalRpuNalUnits: number;
       };
     },
     parseError: null as string | null,
@@ -136,7 +140,7 @@ function renderBench() {
             <dt>container</dt><dd>waiting for file</dd>
             <dt>codec</dt><dd>unknown</dd>
             <dt>samples</dt><dd>0</dd>
-            <dt>DV config</dt><dd>unknown</dd>
+            <dt>RPU NAL</dt><dd>unknown</dd>
           </dl>
         </div>
         <div class="video-frame">
@@ -177,14 +181,19 @@ function renderBench() {
     if (reportJson) reportJson.textContent = JSON.stringify(report, null, 2);
   };
 
-  const updateTrackMeta = (track: Mp4VideoTrack | null, brands: string[] = [], error: string | null = null) => {
+  const updateTrackMeta = (
+    track: Mp4VideoTrack | null,
+    brands: string[] = [],
+    error: string | null = null,
+    rpuSummary: { firstSampleRpuNalUnits: number; totalRpuNalUnits: number } | null = null,
+  ) => {
     if (!trackMeta) return;
     if (error) {
       trackMeta.innerHTML = `
         <dt>container</dt><dd>parse failed</dd>
         <dt>codec</dt><dd>${error}</dd>
         <dt>samples</dt><dd>0</dd>
-        <dt>DV config</dt><dd>unknown</dd>
+        <dt>RPU NAL</dt><dd>unknown</dd>
       `;
       return;
     }
@@ -193,7 +202,7 @@ function renderBench() {
         <dt>container</dt><dd>not MP4 or no video track</dd>
         <dt>codec</dt><dd>unknown</dd>
         <dt>samples</dt><dd>0</dd>
-        <dt>DV config</dt><dd>unknown</dd>
+        <dt>RPU NAL</dt><dd>unknown</dd>
       `;
       return;
     }
@@ -201,7 +210,7 @@ function renderBench() {
       <dt>container</dt><dd>${brands.join(', ') || 'mp4'}</dd>
       <dt>codec</dt><dd>${track.hevcConfig?.codecString ?? track.codecType}</dd>
       <dt>samples</dt><dd>${track.sampleCount} (${track.samples.filter((sample) => sample.isSync).length} sync)</dd>
-      <dt>DV config</dt><dd>${track.hasDolbyVisionConfig ? 'dvcC/dvvC present' : 'not present'}</dd>
+      <dt>RPU NAL</dt><dd>${rpuSummary ? `${rpuSummary.totalRpuNalUnits} total, ${rpuSummary.firstSampleRpuNalUnits} in first sample` : 'not scanned'}</dd>
     `;
   };
 
@@ -234,8 +243,15 @@ function renderBench() {
     }
 
     try {
-      const parsed = parseMp4(new Uint8Array(await file.arrayBuffer()));
+      const fileBytes = new Uint8Array(await file.arrayBuffer());
+      const parsed = parseMp4(fileBytes);
       const track = parsed.tracks[0] ?? null;
+      const lengthSize = track?.hevcConfig?.lengthSize ?? 0;
+      const firstSample = track?.samples[0] ?? null;
+      const firstSampleAnalysis = track && firstSample && lengthSize
+        ? parseLengthPrefixedHevcSample(fileBytes.subarray(firstSample.offset, firstSample.offset + firstSample.size), lengthSize)
+        : null;
+      const fullAnalysis = track && lengthSize ? analyzeMp4HevcSamples(fileBytes, track.samples, lengthSize) : null;
       if (track) {
         report.mp4 = {
           brands: parsed.brands,
@@ -252,10 +268,16 @@ function renderBench() {
             firstSampleBytes: track.samples[0]?.size ?? 0,
             hasDolbyVisionConfig: track.hasDolbyVisionConfig,
             lengthSize: track.hevcConfig?.lengthSize ?? null,
+            firstSampleNalUnits: firstSampleAnalysis?.nalUnits.length ?? 0,
+            firstSampleRpuNalUnits: firstSampleAnalysis?.rpuNalUnits.length ?? 0,
+            totalRpuNalUnits: fullAnalysis?.rpuNalUnits.length ?? 0,
           },
         };
       }
-      updateTrackMeta(track, parsed.brands);
+      updateTrackMeta(track, parsed.brands, null, fullAnalysis && firstSampleAnalysis ? {
+        firstSampleRpuNalUnits: firstSampleAnalysis.rpuNalUnits.length,
+        totalRpuNalUnits: fullAnalysis.rpuNalUnits.length,
+      } : null);
     } catch (error) {
       report.parseError = error instanceof Error ? error.message : String(error);
       updateTrackMeta(null, [], report.parseError);
