@@ -2,7 +2,14 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub const HEVC_NAL_DV_RPU: u8 = 62;
-pub const COMPACT_DOVI_FLOAT32_COUNT: usize = 256;
+pub const COMPACT_DOVI_FLOAT32_COUNT: usize = 276;
+pub const COMPACT_DOVI_NONLINEAR_OFFSET: usize = 0;
+pub const COMPACT_DOVI_NONLINEAR_MATRIX_OFFSET: usize = 4;
+pub const COMPACT_DOVI_LINEAR_MATRIX_OFFSET: usize = 16;
+pub const COMPACT_DOVI_SOURCE_PQ_OFFSET: usize = 28;
+pub const COMPACT_DOVI_PIVOTS_OFFSET: usize = 32;
+pub const COMPACT_DOVI_POLY_COEFFS_OFFSET: usize = 60;
+pub const COMPACT_DOVI_MMR_COEFFS_OFFSET: usize = 132;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum LumaWasmError {
@@ -34,16 +41,26 @@ pub struct CompactDoviMetadata {
     pub linear_matrix: [f32; 9],
     pub source_min_pq: f32,
     pub source_max_pq: f32,
+    pub pivots: Vec<f32>,
+    pub poly_coeffs: Vec<f32>,
+    pub mmr_coeffs: Vec<f32>,
 }
 
 impl Default for CompactDoviMetadata {
     fn default() -> Self {
+        let mut poly_coeffs = vec![0.0; 72];
+        poly_coeffs[1] = 1.0;
+        poly_coeffs[5] = 1.0;
+        poly_coeffs[9] = 1.0;
         Self {
             nonlinear_offset: [0.0; 3],
             nonlinear_matrix: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
             linear_matrix: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
             source_min_pq: 0.0,
             source_max_pq: 1.0,
+            pivots: vec![0.0; 28],
+            poly_coeffs,
+            mmr_coeffs: vec![0.0; 144],
         }
     }
 }
@@ -138,12 +155,29 @@ pub fn parse_rpu_metadata(rpu_payload: &[u8]) -> Result<CompactDoviMetadata, Lum
 
 pub fn pack_metadata(metadata: &CompactDoviMetadata) -> [f32; COMPACT_DOVI_FLOAT32_COUNT] {
     let mut packed = [0.0; COMPACT_DOVI_FLOAT32_COUNT];
-    packed[0..3].copy_from_slice(&metadata.nonlinear_offset);
-    packed[4..13].copy_from_slice(&metadata.nonlinear_matrix);
-    packed[16..25].copy_from_slice(&metadata.linear_matrix);
-    packed[28] = metadata.source_min_pq;
-    packed[29] = metadata.source_max_pq;
+    packed[COMPACT_DOVI_NONLINEAR_OFFSET..COMPACT_DOVI_NONLINEAR_OFFSET + 3].copy_from_slice(&metadata.nonlinear_offset);
+    pack_vec4_rows(&mut packed, COMPACT_DOVI_NONLINEAR_MATRIX_OFFSET, &metadata.nonlinear_matrix, 3, 3);
+    pack_vec4_rows(&mut packed, COMPACT_DOVI_LINEAR_MATRIX_OFFSET, &metadata.linear_matrix, 3, 3);
+    packed[COMPACT_DOVI_SOURCE_PQ_OFFSET] = metadata.source_min_pq;
+    packed[COMPACT_DOVI_SOURCE_PQ_OFFSET + 1] = metadata.source_max_pq;
+    pack_slice(&mut packed, COMPACT_DOVI_PIVOTS_OFFSET, &metadata.pivots, 28);
+    pack_slice(&mut packed, COMPACT_DOVI_POLY_COEFFS_OFFSET, &metadata.poly_coeffs, 72);
+    pack_slice(&mut packed, COMPACT_DOVI_MMR_COEFFS_OFFSET, &metadata.mmr_coeffs, 144);
     packed
+}
+
+fn pack_vec4_rows(packed: &mut [f32], offset: usize, values: &[f32], row_count: usize, row_width: usize) {
+    for row in 0..row_count {
+        for column in 0..row_width {
+            packed[offset + row * 4 + column] = values[row * row_width + column];
+        }
+    }
+}
+
+fn pack_slice(packed: &mut [f32], offset: usize, values: &[f32], count: usize) {
+    for index in 0..count {
+        packed[offset + index] = values.get(index).copied().unwrap_or(0.0);
+    }
 }
 
 #[cfg(test)]
@@ -171,10 +205,32 @@ mod tests {
     fn packs_metadata_with_fixed_layout() {
         let packed = pack_metadata(&CompactDoviMetadata::default());
         assert_eq!(packed.len(), COMPACT_DOVI_FLOAT32_COUNT);
+        assert_eq!(COMPACT_DOVI_FLOAT32_COUNT, 276);
         assert_eq!(packed[4], 1.0);
+        assert_eq!(packed[9], 1.0);
+        assert_eq!(packed[14], 1.0);
         assert_eq!(packed[16], 1.0);
         assert_eq!(packed[28], 0.0);
         assert_eq!(packed[29], 1.0);
+        assert_eq!(&packed[60..72], &[0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn packs_matrices_with_vec4_row_padding() {
+        let mut metadata = CompactDoviMetadata::default();
+        metadata.nonlinear_matrix = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
+        metadata.linear_matrix = [11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0];
+        metadata.pivots[0] = 100.0;
+        metadata.poly_coeffs[0] = 200.0;
+        metadata.mmr_coeffs[143] = 443.0;
+
+        let packed = pack_metadata(&metadata);
+
+        assert_eq!(&packed[4..16], &[1.0, 2.0, 3.0, 0.0, 4.0, 5.0, 6.0, 0.0, 7.0, 8.0, 9.0, 0.0]);
+        assert_eq!(&packed[16..28], &[11.0, 12.0, 13.0, 0.0, 14.0, 15.0, 16.0, 0.0, 17.0, 18.0, 19.0, 0.0]);
+        assert_eq!(packed[COMPACT_DOVI_PIVOTS_OFFSET], 100.0);
+        assert_eq!(packed[COMPACT_DOVI_POLY_COEFFS_OFFSET], 200.0);
+        assert_eq!(packed[COMPACT_DOVI_FLOAT32_COUNT - 1], 443.0);
     }
 
     #[test]

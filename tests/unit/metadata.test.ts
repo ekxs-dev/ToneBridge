@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   COMPACT_DOVI_FLOAT32_COUNT,
+  COMPACT_DOVI_LAYOUT,
   createIdentityDoviMetadata,
   metadataForTimestamp,
   packCompactDoviMetadata,
@@ -32,10 +33,44 @@ describe('compact metadata packing', () => {
     const floats = new Float32Array(buffer);
 
     expect(floats).toHaveLength(COMPACT_DOVI_FLOAT32_COUNT);
+    expect(COMPACT_DOVI_FLOAT32_COUNT).toBe(276);
     expect(floats[0]).toBe(0);
     expect(floats[4]).toBe(1);
+    expect(floats[8 + 1]).toBe(1);
+    expect(floats[12 + 2]).toBe(1);
     expect(floats[16]).toBe(1);
     expect(floats[28]).toBe(0);
     expect(floats[29]).toBe(1);
+    expect([...floats.slice(COMPACT_DOVI_LAYOUT.polyCoeffs, COMPACT_DOVI_LAYOUT.polyCoeffs + 12)]).toEqual([
+      0, 1, 0, 0,
+      0, 1, 0, 0,
+      0, 1, 0, 0,
+    ]);
+  });
+
+  it('packs matrix rows with vec4 padding for WGSL uniform layout', () => {
+    const metadata = createIdentityDoviMetadata();
+    metadata.nonlinearMatrix = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+    metadata.linearMatrix = [11, 12, 13, 14, 15, 16, 17, 18, 19];
+    metadata.pivots = Array.from({ length: 28 }, (_, index) => 100 + index);
+    metadata.polyCoeffs = Array.from({ length: 72 }, (_, index) => 200 + index);
+    metadata.mmrCoeffs = Array.from({ length: 144 }, (_, index) => 300 + index);
+
+    const floats = new Float32Array(packCompactDoviMetadata(metadata));
+
+    expect([...floats.slice(COMPACT_DOVI_LAYOUT.nonlinearMatrix, COMPACT_DOVI_LAYOUT.nonlinearMatrix + 12)]).toEqual([
+      1, 2, 3, 0,
+      4, 5, 6, 0,
+      7, 8, 9, 0,
+    ]);
+    expect([...floats.slice(COMPACT_DOVI_LAYOUT.linearMatrix, COMPACT_DOVI_LAYOUT.linearMatrix + 12)]).toEqual([
+      11, 12, 13, 0,
+      14, 15, 16, 0,
+      17, 18, 19, 0,
+    ]);
+    expect(floats[COMPACT_DOVI_LAYOUT.pivots]).toBe(100);
+    expect(floats[COMPACT_DOVI_LAYOUT.polyCoeffs]).toBe(200);
+    expect(floats[COMPACT_DOVI_LAYOUT.mmrCoeffs]).toBe(300);
+    expect(floats[COMPACT_DOVI_FLOAT32_COUNT - 1]).toBe(443);
   });
 });
