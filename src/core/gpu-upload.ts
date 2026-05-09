@@ -1,11 +1,16 @@
 import type { I420P10Frame } from './raw-frame';
 
+export type GpuPreviewMode = 0 | 1 | 2;
+
 export interface GpuFrameParams {
-  width: number;
-  height: number;
+  sourceWidth: number;
+  sourceHeight: number;
+  outputWidth: number;
+  outputHeight: number;
   yStride: number;
   uvStride: number;
   range: 0 | 1;
+  previewMode: GpuPreviewMode;
 }
 
 export interface I420P10GpuUpload {
@@ -16,6 +21,12 @@ export interface I420P10GpuUpload {
   frameParams: GpuFrameParams;
   storageByteLength: number;
   totalByteLength: number;
+}
+
+export interface I420P10GpuUploadOptions {
+  outputWidth?: number;
+  outputHeight?: number;
+  previewMode?: GpuPreviewMode;
 }
 
 function readU16LE(data: Uint8Array, sampleIndex: number): number {
@@ -33,29 +44,34 @@ function copyPlaneToU32(frame: I420P10Frame, sourceOffset: number, stride: numbe
   return plane;
 }
 
-export function buildI420P10GpuUpload(frame: I420P10Frame): I420P10GpuUpload {
+export function buildI420P10GpuUpload(frame: I420P10Frame, options: I420P10GpuUploadOptions = {}): I420P10GpuUpload {
   const chromaWidth = Math.ceil(frame.width / 2);
   const chromaHeight = Math.ceil(frame.height / 2);
+  const outputWidth = Math.max(1, Math.floor(options.outputWidth ?? frame.width));
+  const outputHeight = Math.max(1, Math.floor(options.outputHeight ?? frame.height));
   const yPlane = copyPlaneToU32(frame, frame.yOffset, frame.yStride, frame.width, frame.height);
   const uPlane = copyPlaneToU32(frame, frame.uOffset, frame.uvStride, chromaWidth, chromaHeight);
   const vPlane = copyPlaneToU32(frame, frame.vOffset, frame.uvStride, chromaWidth, chromaHeight);
 
   const frameParams: GpuFrameParams = {
-    width: frame.width,
-    height: frame.height,
-    yStride: frame.width,
+    sourceWidth: frame.width,
+    sourceHeight: frame.height,
+    outputWidth,
+    outputHeight,
+    yStride: frame.yStride,
     uvStride: chromaWidth,
     range: frame.range === 'full' ? 0 : 1,
+    previewMode: options.previewMode ?? 0,
   };
   const frameParamsUniform = new Uint32Array([
-    frameParams.width,
-    frameParams.height,
+    frameParams.sourceWidth,
+    frameParams.sourceHeight,
+    frameParams.outputWidth,
+    frameParams.outputHeight,
     frameParams.yStride,
     frameParams.uvStride,
     frameParams.range,
-    0,
-    0,
-    0,
+    frameParams.previewMode,
   ]);
   const storageByteLength = yPlane.byteLength + uPlane.byteLength + vPlane.byteLength;
 

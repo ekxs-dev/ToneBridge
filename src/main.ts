@@ -8,7 +8,7 @@ import {
   type DecoderAdapterProbe,
 } from './core/decoder-adapter';
 import { analyzeMp4HevcSamples, parseLengthPrefixedHevcSample } from './core/hevc';
-import { buildI420P10GpuUpload } from './core/gpu-upload';
+import { buildI420P10GpuUpload, type GpuPreviewMode } from './core/gpu-upload';
 import { parseMediaFile, type ParsedMediaSource } from './core/media-source';
 import type { Mp4VideoTrack } from './core/mp4';
 import {
@@ -20,6 +20,7 @@ import {
   type SdrPreviewImage,
 } from './core/raw-frame';
 import { inspectRpuAnnexBPacket, inspectRpuForSeconds, type RpuFrameSelection } from './core/rpu-alignment';
+import { renderI420P10SdrWithWebGpu, type WebGpuSdrRenderProbe } from './core/webgpu-render';
 import { uploadI420P10ToWebGpu, type WebGpuUploadProbe } from './core/webgpu-upload';
 import type { DecodedFrameProbe } from './core/webcodecs';
 
@@ -132,10 +133,12 @@ function renderBench() {
     decoderAdapter: null as DecoderAdapterProbe | null,
     frameRpu: null as RpuFrameSelection | null,
     gpuUpload: null as WebGpuUploadProbe | null,
+    gpuRender: null as WebGpuSdrRenderProbe | null,
     sdrPreview: null as null | {
       width: number;
       height: number;
       mode: RawPreviewMode;
+      renderer: 'cpu' | 'webgpu';
       seekSeconds: number;
       decodeElapsedMs: number;
       averageRgb: [number, number, number];
@@ -202,6 +205,12 @@ function renderBench() {
             <dt>buffers</dt><dd>unknown</dd>
             <dt>bytes</dt><dd>unknown</dd>
           </dl>
+          <h2 class="subhead">WebGPU render</h2>
+          <dl class="debug-list compact" id="gpu-render-meta">
+            <dt>status</dt><dd>waiting</dd>
+            <dt>shader</dt><dd>unknown</dd>
+            <dt>readback</dt><dd>unknown</dd>
+          </dl>
         </div>
         <div class="video-frame">
           <video id="bench-video" controls muted playsinline preload="metadata"></video>
@@ -258,6 +267,7 @@ function renderBench() {
   const decodeMeta = document.querySelector<HTMLElement>('#decode-meta');
   const frameRpuMeta = document.querySelector<HTMLElement>('#frame-rpu-meta');
   const gpuUploadMeta = document.querySelector<HTMLElement>('#gpu-upload-meta');
+  const gpuRenderMeta = document.querySelector<HTMLElement>('#gpu-render-meta');
   const reportJson = document.querySelector<HTMLElement>('#report-json');
   const ffmpegRawProbe = document.querySelector<HTMLButtonElement>('#ffmpeg-raw-probe');
   const sdrPreviewCanvas = document.querySelector<HTMLCanvasElement>('#sdr-preview');
@@ -331,6 +341,26 @@ function renderBench() {
       <dt>status</dt><dd>${probe.ok ? 'uploaded' : probe.attempted ? 'failed' : 'unavailable'}${probe.elapsedMs ? ` in ${probe.elapsedMs.toFixed(1)} ms` : ''}</dd>
       <dt>buffers</dt><dd>${probe.buffers}</dd>
       <dt>bytes</dt><dd>${probe.bytes ? `${(probe.bytes / 1024 / 1024).toFixed(2)} MB` : '0'}</dd>
+      ${probe.error ? `<dt>note</dt><dd>${probe.error}</dd>` : ''}
+    `;
+  };
+
+  const updateGpuRenderMeta = (probe: WebGpuSdrRenderProbe | null) => {
+    report.gpuRender = probe;
+    if (!gpuRenderMeta) return;
+    if (!probe) {
+      gpuRenderMeta.innerHTML = `
+        <dt>status</dt><dd>waiting</dd>
+        <dt>shader</dt><dd>unknown</dd>
+        <dt>readback</dt><dd>unknown</dd>
+      `;
+      return;
+    }
+    gpuRenderMeta.innerHTML = `
+      <dt>status</dt><dd>${probe.ok ? `rendered ${probe.width} x ${probe.height}` : probe.attempted ? 'failed' : 'unavailable'}${probe.elapsedMs ? ` in ${probe.elapsedMs.toFixed(1)} ms` : ''}</dd>
+      <dt>shader</dt><dd>${probe.shaderElapsedMs ? `${probe.shaderElapsedMs.toFixed(1)} ms` : 'not run'}</dd>
+      <dt>readback</dt><dd>${probe.readbackElapsedMs ? `${probe.readbackElapsedMs.toFixed(1)} ms` : 'not run'}</dd>
+      ${probe.averageRgb ? `<dt>avg RGB</dt><dd>${probe.averageRgb.map((value) => value.toFixed(1)).join(', ')}</dd>` : ''}
       ${probe.error ? `<dt>note</dt><dd>${probe.error}</dd>` : ''}
     `;
   };
@@ -426,6 +456,12 @@ function renderBench() {
     return convertI420P10ToSdrPreview(frame);
   };
 
+  const previewModeToGpuMode = (mode: RawPreviewMode): GpuPreviewMode => {
+    if (mode === 'raw-luma') return 1;
+    if (mode === 'dv-p5-base') return 2;
+    return 0;
+  };
+
   const clearSdrPreview = () => {
     if (!sdrPreviewCanvas) return;
     const ctx = sdrPreviewCanvas.getContext('2d');
@@ -446,7 +482,13 @@ function renderBench() {
     }));
   };
 
-  const drawSdrPreview = (preview: SdrPreviewImage, mode: RawPreviewMode, seekSeconds: number, decodeElapsedMs: number) => {
+  const drawSdrPreview = (
+    preview: SdrPreviewImage,
+    mode: RawPreviewMode,
+    seekSeconds: number,
+    decodeElapsedMs: number,
+    renderer: 'cpu' | 'webgpu' = 'cpu',
+  ) => {
     if (!sdrPreviewCanvas) return;
     sdrPreviewCanvas.width = preview.width;
     sdrPreviewCanvas.height = preview.height;
@@ -457,6 +499,7 @@ function renderBench() {
       width: preview.width,
       height: preview.height,
       mode,
+      renderer,
       seekSeconds,
       decodeElapsedMs,
       averageRgb: preview.stats.averageRgb,
@@ -465,10 +508,40 @@ function renderBench() {
     if (sdrPreviewMeta) {
       sdrPreviewMeta.innerHTML = `
         <span>${previewModeLabel(mode)} ${preview.width} x ${preview.height} @ ${formatPreviewSeconds(seekSeconds)}</span>
+        <span>${renderer}</span>
         <span>decode ${decodeElapsedMs.toFixed(1)} ms</span>
         <span>avg RGB ${preview.stats.averageRgb.map((value) => value.toFixed(1)).join(', ')}</span>
         <span>${preview.stats.nonBlackPixels} non-black pixels</span>
       `;
+    }
+  };
+
+  const renderRawFrameForCurrentMode = async (
+    data: Uint8Array,
+    track: Mp4VideoTrack,
+    seekSeconds: number,
+    decodeElapsedMs: number,
+    version: number,
+  ) => {
+    const mode = previewMode;
+    const frame = createI420P10Frame(data, track.width, track.height, 'full');
+    const cpuPreview = convertRawFrameForPreview(data, track, mode);
+    drawSdrPreview(cpuPreview, mode, seekSeconds, decodeElapsedMs, 'cpu');
+    updateReport();
+
+    const gpuUpload = buildI420P10GpuUpload(frame, {
+      outputWidth: cpuPreview.width,
+      outputHeight: cpuPreview.height,
+      previewMode: previewModeToGpuMode(mode),
+    });
+    updateGpuUploadMeta(await uploadI420P10ToWebGpu(gpuUpload));
+    if (version !== selectionVersion) return;
+
+    const gpuRender = await renderI420P10SdrWithWebGpu(gpuUpload, mode);
+    if (version !== selectionVersion) return;
+    updateGpuRenderMeta(gpuRender.probe);
+    if (gpuRender.preview) {
+      drawSdrPreview(gpuRender.preview, mode, seekSeconds, decodeElapsedMs, 'webgpu');
     }
   };
 
@@ -508,12 +581,14 @@ function renderBench() {
 
     const rawFrame = ffmpegWasm.rawFrame;
     if (rawFrame.ok && rawFrame.data) {
-      const preview = convertRawFrameForPreview(rawFrame.data, track, previewMode);
-      drawSdrPreview(preview, previewMode, rawFrame.seekSeconds, rawFrame.elapsedMs);
-      const gpuUpload = buildI420P10GpuUpload(createI420P10Frame(rawFrame.data, track.width, track.height, 'full'));
-      updateGpuUploadMeta(await uploadI420P10ToWebGpu(gpuUpload));
+      await renderRawFrameForCurrentMode(rawFrame.data, track, rawFrame.seekSeconds, rawFrame.elapsedMs, version);
+      if (version !== selectionVersion) {
+        isRenderingRawPreview = false;
+        return;
+      }
     } else {
       updateGpuUploadMeta(null);
+      updateGpuRenderMeta(null);
       updateSdrPreviewStatus([
         'SDR debug preview failed',
         `requested ${formatPreviewSeconds(seekSeconds)}`,
@@ -693,6 +768,7 @@ function renderBench() {
     report.decoderAdapter = null;
     report.frameRpu = null;
     report.gpuUpload = null;
+    report.gpuRender = null;
     report.sdrPreview = null;
     activeTrack = null;
     activeParsedSource = null;
@@ -706,6 +782,7 @@ function renderBench() {
     clearSdrPreview();
     updateFrameRpuMeta(null);
     updateGpuUploadMeta(null);
+    updateGpuRenderMeta(null);
     updateDecodeMeta(null);
     updateReport();
 
@@ -781,6 +858,7 @@ function renderBench() {
       updateTrackMeta(null, [], report.parseError);
       updateFrameRpuMeta(null);
       updateDecodeMeta(null);
+      updateGpuRenderMeta(null);
       setPreviewControlsDisabled(true);
     }
     updateReport();
@@ -827,9 +905,7 @@ function renderBench() {
       const track = activeTrack;
       const rawFrame = report.decoderAdapter?.ffmpegWasm?.rawFrame;
       if (track && rawFrame?.ok && rawFrame.data) {
-        const preview = convertRawFrameForPreview(rawFrame.data, track, previewMode);
-        drawSdrPreview(preview, previewMode, rawFrame.seekSeconds, rawFrame.elapsedMs);
-        updateReport();
+        void renderRawFrameForCurrentMode(rawFrame.data, track, rawFrame.seekSeconds, rawFrame.elapsedMs, selectionVersion).then(updateReport);
       } else {
         updateSdrPreviewStatus([
           'Debug preview waiting',

@@ -26,6 +26,7 @@ test('benchmark page emits a JSON timing report', async ({ page }) => {
   await expect(page.getByText('Video preview')).toBeVisible();
   await expect(page.getByText('WebCodecs probe')).toBeVisible();
   await expect(page.getByText('WebGPU upload')).toBeVisible();
+  await expect(page.getByText('WebGPU render')).toBeVisible();
   await expect(page.locator('#video-file')).toBeAttached();
   await expect(page.locator('#bench-video')).toBeVisible();
   await expect(page.locator('#sdr-preview')).toBeVisible();
@@ -33,6 +34,7 @@ test('benchmark page emits a JSON timing report', async ({ page }) => {
   await expect(page.locator('#sdr-preview-seconds')).toBeVisible();
   await expect(page.locator('#frame-rpu-meta')).toContainText('not selected');
   await expect(page.locator('#gpu-upload-meta')).toContainText('waiting');
+  await expect(page.locator('#gpu-render-meta')).toContainText('waiting');
   await expect(page.locator('[data-preview-mode="raw-luma"]')).toHaveClass(/active/);
   await expect(page.locator('[data-preview-mode="dv-p5-base"]')).toBeVisible();
   await expect(page.locator('[data-preview-mode="sdr-approx"]')).toBeVisible();

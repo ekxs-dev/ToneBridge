@@ -24,13 +24,16 @@ describe('I420P10 WebGPU upload planning', () => {
     expect([...upload.uPlane]).toEqual([512, 513]);
     expect([...upload.vPlane]).toEqual([514, 515]);
     expect(upload.frameParams).toEqual({
-      width: 4,
-      height: 2,
+      sourceWidth: 4,
+      sourceHeight: 2,
+      outputWidth: 4,
+      outputHeight: 2,
       yStride: 4,
       uvStride: 2,
       range: 1,
+      previewMode: 0,
     });
-    expect([...upload.frameParamsUniform]).toEqual([4, 2, 4, 2, 1, 0, 0, 0]);
+    expect([...upload.frameParamsUniform]).toEqual([4, 2, 4, 2, 4, 2, 1, 0]);
     expect(upload.storageByteLength).toBe((8 + 2 + 2) * 4);
     expect(upload.totalByteLength).toBe((8 + 2 + 2 + 8) * 4);
   });
@@ -44,5 +47,21 @@ describe('I420P10 WebGPU upload planning', () => {
 
     expect(upload.yPlane[0]).toBe(1023);
     expect(upload.frameParams.range).toBe(0);
+  });
+
+  it('packs preview output size and shader mode into the frame params uniform', () => {
+    const data = new Uint8Array(expectedI420P10ByteLength(4, 2));
+    const frame = createI420P10Frame(data, 4, 2);
+
+    const upload = buildI420P10GpuUpload(frame, {
+      outputWidth: 2,
+      outputHeight: 1,
+      previewMode: 2,
+    });
+
+    expect(upload.frameParams.outputWidth).toBe(2);
+    expect(upload.frameParams.outputHeight).toBe(1);
+    expect(upload.frameParams.previewMode).toBe(2);
+    expect([...upload.frameParamsUniform]).toEqual([4, 2, 2, 1, 4, 2, 0, 2]);
   });
 });
