@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { buildVideoDecoderConfig, planEncodedChunk, sampleDurationUs, sampleTimestampUs } from '../../src/core/webcodecs';
+import {
+  __webcodecsTestHooks,
+  buildVideoDecoderConfig,
+  planEncodedChunk,
+  sampleDurationUs,
+  sampleTimestampUs,
+} from '../../src/core/webcodecs';
 import { parseMp4 } from '../../src/core/mp4';
 
 const fixture = path.resolve(__dirname, '../fixtures/dv_p5_short.mp4');
@@ -34,5 +40,14 @@ describe('WebCodecs planning', () => {
     expect(config.codedHeight).toBe(1608);
     expect(config.description).toBeInstanceOf(Uint8Array);
     expect((config.description as Uint8Array).byteLength).toBeGreaterThan(20);
+  });
+
+  it('plans strict and relaxed HEVC codec candidates for browser probing', () => {
+    expect(__webcodecsTestHooks.uniqueCodecCandidates('hev1.2.6.L150.B900000000000')).toEqual([
+      'hev1.2.6.L150.B900000000000',
+      'hev1.2.6.L150.B0',
+      'hvc1.2.6.L150.B900000000000',
+      'hvc1.2.6.L150.B0',
+    ]);
   });
 });

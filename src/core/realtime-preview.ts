@@ -11,6 +11,7 @@ export interface RealtimePreviewReport {
   currentSeconds: number | null;
   lastFrameMs: number | null;
   averageFrameMs: number | null;
+  consecutiveFailures: number;
   note: string | null;
   error: string | null;
 }
@@ -25,7 +26,7 @@ export interface RealtimePreviewClock {
 const MIN_TARGET_FPS = 0.25;
 const MAX_TARGET_FPS = 4;
 
-export function createRealtimePreviewReport(targetFps = 1): RealtimePreviewReport {
+export function createRealtimePreviewReport(targetFps = 0.25): RealtimePreviewReport {
   return {
     adapter: null,
     status: 'idle',
@@ -36,6 +37,7 @@ export function createRealtimePreviewReport(targetFps = 1): RealtimePreviewRepor
     currentSeconds: null,
     lastFrameMs: null,
     averageFrameMs: null,
+    consecutiveFailures: 0,
     note: null,
     error: null,
   };
@@ -85,6 +87,7 @@ export function updateRealtimeFrameReport(
     currentSeconds: options.currentSeconds,
     lastFrameMs: options.frameElapsedMs,
     averageFrameMs,
+    consecutiveFailures: 0,
     error: null,
   };
 }

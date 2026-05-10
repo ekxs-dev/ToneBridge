@@ -47,5 +47,6 @@ describe('realtime preview planning', () => {
     expect(updated.droppedFrames).toBe(2);
     expect(updated.effectiveFps).toBeCloseTo(0.666, 2);
     expect(updated.currentSeconds).toBe(12.5);
+    expect(updated.consecutiveFailures).toBe(0);
   });
 });

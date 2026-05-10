@@ -8,13 +8,31 @@ export interface HevcCodecConfig {
   constraintIndicatorFlags?: number;
 }
 
+function reverseBits32(value: number): number {
+  let input = value >>> 0;
+  let output = 0;
+  for (let bit = 0; bit < 32; bit += 1) {
+    output = (output << 1) | (input & 1);
+    input >>>= 1;
+  }
+  return output >>> 0;
+}
+
+function hevcCompatibilityString(flags: number): string {
+  return reverseBits32(flags).toString(16).toUpperCase();
+}
+
+function hevcConstraintString(flags: number): string {
+  return flags.toString(16).toUpperCase();
+}
+
 export function buildHevcCodecString(config: HevcCodecConfig): string {
   const profileSpacePrefix = ['', 'A', 'B', 'C'][config.profileSpace ?? 0] ?? '';
   const profile = `${profileSpacePrefix}${config.profileIdc}`;
-  const compatibility = (config.profileCompatibilityFlags ?? 0).toString(16).toUpperCase();
+  const compatibility = hevcCompatibilityString(config.profileCompatibilityFlags ?? 0);
   const tier = config.tierFlag ? 'H' : 'L';
   const level = `${tier}${config.levelIdc}`;
-  const constraint = (config.constraintIndicatorFlags ?? 0).toString(16).toUpperCase();
+  const constraint = hevcConstraintString(config.constraintIndicatorFlags ?? 0);
   return `${config.brand}.${profile}.${compatibility}.${level}.B${constraint}`;
 }
 

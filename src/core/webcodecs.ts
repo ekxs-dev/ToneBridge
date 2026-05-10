@@ -56,6 +56,32 @@ export function buildVideoDecoderConfig(track: Mp4VideoTrack): VideoDecoderConfi
   };
 }
 
+function uniqueCodecCandidates(codec: string): string[] {
+  const candidates = [codec];
+  const relaxedConstraint = codec.replace(/\.B[0-9A-Fa-f]+$/, '.B0');
+  candidates.push(relaxedConstraint);
+
+  if (codec.startsWith('hev1.')) {
+    candidates.push(codec.replace(/^hev1\./, 'hvc1.'));
+    candidates.push(relaxedConstraint.replace(/^hev1\./, 'hvc1.'));
+  } else if (codec.startsWith('hvc1.')) {
+    candidates.push(codec.replace(/^hvc1\./, 'hev1.'));
+    candidates.push(relaxedConstraint.replace(/^hvc1\./, 'hev1.'));
+  }
+
+  return [...new Set(candidates)];
+}
+
+async function findSupportedVideoDecoderConfig(config: VideoDecoderConfig): Promise<VideoDecoderConfig | null> {
+  const codecs = uniqueCodecCandidates(config.codec);
+  for (const codec of codecs) {
+    const candidate = { ...config, codec };
+    const support = await VideoDecoder.isConfigSupported(candidate);
+    if (support.supported) return support.config ?? candidate;
+  }
+  return null;
+}
+
 export function planEncodedChunk(sample: Mp4Sample, track: Mp4VideoTrack): EncodedChunkPlan {
   return {
     type: sample.isSync ? 'key' : 'delta',
@@ -74,6 +100,10 @@ export function createEncodedVideoChunk(fileBytes: Uint8Array, sample: Mp4Sample
     data: fileBytes.slice(sample.offset, sample.offset + sample.size),
   });
 }
+
+export const __webcodecsTestHooks = {
+  uniqueCodecCandidates,
+};
 
 export async function decodeFirstFrameFromMp4Track(
   fileBytes: Uint8Array,
@@ -109,11 +139,15 @@ export async function decodeFirstFrameFromMp4Track(
   const config = buildVideoDecoderConfig(track);
   let supportedConfig: VideoDecoderConfig;
   try {
-    const support = await VideoDecoder.isConfigSupported(config);
-    if (!support.supported) {
-      return { ...baseResult(), codec: config.codec, error: `VideoDecoder does not support ${config.codec}.` };
+    const supported = await findSupportedVideoDecoderConfig(config);
+    if (!supported) {
+      return {
+        ...baseResult(),
+        codec: config.codec,
+        error: `VideoDecoder does not support any HEVC candidate: ${uniqueCodecCandidates(config.codec).join(', ')}.`,
+      };
     }
-    supportedConfig = support.config ?? config;
+    supportedConfig = supported;
   } catch (error) {
     return { ...baseResult(), codec: config.codec, error: error instanceof Error ? error.message : String(error) };
   }

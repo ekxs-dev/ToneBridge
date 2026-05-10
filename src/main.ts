@@ -267,7 +267,7 @@ function renderBench() {
             <button id="realtime-toggle" class="secondary-button realtime-button" type="button" disabled>Start realtime preview</button>
             <label class="seconds-field" for="realtime-fps">
               <span>target fps</span>
-              <input id="realtime-fps" type="number" min="0.25" max="4" step="0.25" value="1" disabled />
+              <input id="realtime-fps" type="number" min="0.25" max="4" step="0.25" value="0.25" disabled />
             </label>
           </div>
           <dl class="debug-list compact realtime-meta" id="realtime-meta">
@@ -364,6 +364,7 @@ function renderBench() {
       <dt>frames</dt><dd>${preview.renderedFrames} rendered, ${preview.droppedFrames} dropped</dd>
       <dt>frame ms</dt><dd>${frameMs}, avg ${avgMs}</dd>
       <dt>time</dt><dd>${preview.currentSeconds == null ? 'waiting' : formatPreviewSeconds(preview.currentSeconds)}</dd>
+      <dt>failures</dt><dd>${preview.consecutiveFailures} consecutive</dd>
       ${preview.note ? `<dt>note</dt><dd>${preview.note}</dd>` : ''}
       ${preview.error ? `<dt>error</dt><dd>${preview.error}</dd>` : ''}
     `;
@@ -957,11 +958,14 @@ function renderBench() {
 
         const rawFrame = ffmpegWasm.rawFrame;
         if (!rawFrame.ok || !rawFrame.data) {
+          const failures = report.realtimePreview.consecutiveFailures + 1;
           updateRealtimeMeta({
             ...report.realtimePreview,
-            status: 'failed',
+            status: failures >= 2 ? 'failed' : 'running',
+            consecutiveFailures: failures,
             error: rawFrame.error ?? ffmpegWasm.error ?? 'ffmpeg.wasm realtime raw-frame decode failed.',
           });
+          if (failures < 2) continue;
           break;
         }
 
