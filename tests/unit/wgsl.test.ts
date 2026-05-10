@@ -36,6 +36,13 @@ describe('WGSL shader source', () => {
     expect(source).toContain('doviParams.nonlinearOffset.xyz * vec3<f32>(doviOffsetScale)');
   });
 
+  it('does not clamp Dolby Vision nonlinear matrix output before PQ EOTF', () => {
+    const source = fs.readFileSync(shaderPath, 'utf8');
+
+    expect(source).toContain('let lmsCode = max(dovi_matrix3_mul(');
+    expect(source).not.toContain('let lmsCode = clamp(dovi_matrix3_mul(');
+  });
+
   it('uses bilinear luma/chroma sampling with left chroma siting', () => {
     const source = fs.readFileSync(shaderPath, 'utf8');
 

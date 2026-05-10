@@ -381,12 +381,12 @@ fn render_dovi_rpu(y: f32, u: f32, v: f32) -> vec3<f32> {
   );
   let doviOffsetScale = 1024.0 / 1023.0;
   let nonlinearInput = reshaped - doviParams.nonlinearOffset.xyz * vec3<f32>(doviOffsetScale);
-  let lmsCode = clamp(dovi_matrix3_mul(
+  let lmsCode = max(dovi_matrix3_mul(
     doviParams.nonlinearMatrix0,
     doviParams.nonlinearMatrix1,
     doviParams.nonlinearMatrix2,
     nonlinearInput
-  ), vec3<f32>(0.0), vec3<f32>(1.0));
+  ), vec3<f32>(0.0));
   let lmsLinear = vec3<f32>(pq_eotf(lmsCode.x), pq_eotf(lmsCode.y), pq_eotf(lmsCode.z));
   let sourceRgbLinear = dovi_matrix3_mul(
     doviParams.linearMatrix0,
