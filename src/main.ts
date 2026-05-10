@@ -546,7 +546,11 @@ function renderBench() {
     const mode = previewMode;
     const frame = createI420P10Frame(data, track.width, track.height, 'full');
     const cpuPreview = convertRawFrameForPreview(data, track, mode);
-    drawSdrPreview(cpuPreview, mode, seekSeconds, decodeElapsedMs, 'cpu');
+    updateSdrPreviewStatus([
+      `${previewModeLabel(mode)} decoded at ${formatPreviewSeconds(seekSeconds)}`,
+      'Preparing WebGPU render',
+      'Keeping previous preview until the selected SDR frame is ready',
+    ]);
     updateReport();
 
     const gpuUpload = buildI420P10GpuUpload(frame, {
@@ -577,8 +581,9 @@ function renderBench() {
         metadataSource: 'identity',
         averageRgb: null,
         nonBlackPixels: null,
-        error: metadata.probe.error ?? 'RPU metadata unavailable; preserving CPU debug preview.',
+        error: metadata.probe.error ?? 'RPU metadata unavailable; using CPU debug preview.',
       });
+      drawSdrPreview(cpuPreview, mode, seekSeconds, decodeElapsedMs, 'cpu');
       updateReport();
       return;
     }
@@ -590,6 +595,8 @@ function renderBench() {
     updateGpuRenderMeta(gpuRender.probe);
     if (gpuRender.preview) {
       drawSdrPreview(gpuRender.preview, mode, seekSeconds, decodeElapsedMs, 'webgpu');
+    } else {
+      drawSdrPreview(cpuPreview, mode, seekSeconds, decodeElapsedMs, 'cpu');
     }
   };
 
