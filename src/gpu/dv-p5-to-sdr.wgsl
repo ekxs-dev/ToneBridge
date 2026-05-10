@@ -370,12 +370,12 @@ fn bt1886_oetf(linear: vec3<f32>) -> vec3<f32> {
   return clamp((pow(value, vec3<f32>(1.0 / 2.4)) - vec3<f32>(lb)) / vec3<f32>(lw - lb), vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
-fn libplacebo_softclip(value: f32, source: f32, target: f32) -> f32 {
-  if (target == 0.0) {
+fn libplacebo_softclip(value: f32, source: f32, clipLimit: f32) -> f32 {
+  if (clipLimit == 0.0) {
     return 0.0;
   }
-  let peak = source / target;
-  let x = min(value / target, peak);
+  let peak = source / clipLimit;
+  let x = min(value / clipLimit, peak);
   let knee = 0.70;
   if (x <= knee || peak <= 1.0) {
     return value;
@@ -384,19 +384,19 @@ fn libplacebo_softclip(value: f32, source: f32, target: f32) -> f32 {
   let a = -knee * knee * (peak - 1.0) / (knee * knee - 2.0 * knee + peak);
   let b = (knee * knee - 2.0 * knee * peak + peak) / max(0.000001, peak - 1.0);
   let scale = (b * b + 2.0 * b * knee + knee * knee) / (b - a);
-  return scale * (x + a) / (x + b) * target;
+  return scale * (x + a) / (x + b) * clipLimit;
 }
 
 fn libplacebo_softclip_rgb(rgb: vec3<f32>) -> vec3<f32> {
-  let target = 1.0;
+  let clipLimit = 1.0;
   let maxRgb = max(rgb.r, max(rgb.g, rgb.b));
-  if (maxRgb <= target) {
+  if (maxRgb <= clipLimit) {
     return max(rgb, vec3<f32>(0.0));
   }
   return max(vec3<f32>(
-    libplacebo_softclip(rgb.r, maxRgb, target),
-    libplacebo_softclip(rgb.g, maxRgb, target),
-    libplacebo_softclip(rgb.b, maxRgb, target)
+    libplacebo_softclip(rgb.r, maxRgb, clipLimit),
+    libplacebo_softclip(rgb.g, maxRgb, clipLimit),
+    libplacebo_softclip(rgb.b, maxRgb, clipLimit)
   ), vec3<f32>(0.0));
 }
 

@@ -8,7 +8,10 @@ describe('WGSL shader source', () => {
   it('does not use known Chrome WGSL reserved identifiers as local names', () => {
     const source = fs.readFileSync(shaderPath, 'utf8');
 
-    expect(source).not.toMatch(/\b(?:let|var)\s+meta\b/);
+    for (const identifier of ['meta', 'target']) {
+      expect(source).not.toMatch(new RegExp(`\\b(?:let|var)\\s+${identifier}\\b`));
+      expect(source).not.toMatch(new RegExp(`\\b${identifier}\\s*:`));
+    }
   });
 
   it('uses the BT.2390 diagnostic tone map instead of the old Reinhard path', () => {

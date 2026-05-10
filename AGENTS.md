@@ -95,7 +95,7 @@ npm run test:rust
 - The browser WASM package is built with rustup stable + `wasm32-unknown-unknown` and `wasm-bindgen-cli` 0.2.121 via `npm run build:wasm`.
 - WGSL currently contains a debug compute path and simplified preview modes. It now applies ABI v2 RPU reshape metadata for diagnostics, the MMR basis terms and coefficient padding match libplacebo's `x*y`, `x*z`, `y*z`, `x*y*z` layout, the DV decode offset follows libplacebo's full-range `1024/1023` normalization, the DV nonlinear matrix output only clamps the lower bound before PQ EOTF like libplacebo, the DV post step avoids an extra PQ OETF/EOTF round trip, and the SDR diagnostic tone map uses a BT.2390-style IPT/PQ path using Level 1 max PQ when present instead of the old Reinhard path. For practical comparison against the current FFmpeg/libplacebo PNG command, WebGPU/CPU SDR diagnostics use libplacebo's default `PL_COLOR_SDR_WHITE = 203 nit`, force PQ black to `PL_COLOR_HDR_BLACK`, use an SDR black point of white/1000, apply the libplacebo softclip formula to BT.709 linear RGB highlights, and write BT.1886-style output for `color_trc=bt709`; raw luma remains an sRGB-ish structural diagnostic. The raw WebGPU preview samples luma/chroma bilinearly and assumes the current fixtures' `AVCHROMA_LOC_LEFT` 4:2:0 chroma siting. The result is not yet full libplacebo/reference validated.
 - Current libplacebo gap focus: `pl_shader_dovi_reshape` and the packed RPU fields now have good coverage, so the next largest known mismatch is the simplified WebGPU color-map/gamut path after DV decode. libplacebo's DV decode path is reshape -> nonlinear matrix/offset -> PQ EOTF -> `(HPE LMS->BT.2020 * linear matrix)` -> PQ OETF -> full `pl_shader_color_map_ex`; our WGSL now has the BT.2390/IPT path plus RGB softclip, but does not yet implement libplacebo's perceptual gamut 3D LUT or hue/saturation remapping.
-- Chrome currently rejects `meta` as a WGSL local identifier. Keep shader locals away from reserved keywords; `tests/unit/wgsl.test.ts` guards the regression that broke `/bench` WebGPU rendering.
+- Chrome currently rejects `meta` and `target` as WGSL identifiers. Keep shader locals and function parameters away from reserved keywords; `tests/unit/wgsl.test.ts` guards these regressions that broke `/bench` WebGPU rendering.
 
 ## PR / Commit Guidance
 - Suggested title format: `[lumabridge] <Title>`.
@@ -138,6 +138,7 @@ npm run test:rust
 - [x] Accumulate Dolby Vision RPU pivot deltas before compact metadata packing.
 - [x] Align Rust/WASM MMR coefficient vec4 padding with WGSL/libplacebo.
 - [x] Fix Chrome WGSL shader compilation failure caused by reserved local identifier `meta`.
+- [x] Fix Chrome WGSL shader compilation failure caused by reserved identifier `target`.
 - [x] Avoid CPU preview flash before successful WebGPU RPU render.
 - [x] Avoid blank SDR canvas flash by preserving canvas dimensions between same-size renders.
 - [x] Add manual `/bench` libplacebo PNG pixel-error comparison for current SDR preview.
