@@ -87,6 +87,7 @@ npm run test:rust
 - `/bench` keeps the previous preview visible while a selected raw frame is being decoded/rendered and only draws the CPU preview as fallback, avoiding a CPU-to-WebGPU color flash during successful RPU renders.
 - `/bench` can manually load a libplacebo PNG reference and compare the current SDR preview readback against it. The report records RGB MAE, per-channel MAE, signed RGB bias, output/reference averages, max-error pixel, outlier count, and a reference-gap diagnosis with likely causes/next checks; this is a manual diagnostic, not the final automated fixture parity gate yet.
 - `/bench` avoids resetting the SDR canvas dimensions when the preview size is unchanged. This keeps the previous preview visible during re-renders and prevents the one-frame blank/flash seen while ffmpeg.wasm/WebGPU work is still in flight.
+- `/bench` has a "Realtime preview" control for the currently feasible browser path. Today it runs a wall-clock ffmpeg.wasm fallback loop with target FPS clamped to 0.25-4fps, skips ahead when decode/render is slower than target, and records effective FPS/dropped-frame estimates. This is useful for interactive visual tracking, but it is not strict 24fps DV playback. Strict realtime still requires WebCodecs streaming decode plus `VideoFrame.copyTo()` I420P10 frames.
 - `tests/unit/rpu-metadata.test.ts` now checks compact RPU metadata against FFmpeg Dolby Vision side-data fields for the first fixture frame: matrices, offsets, source PQ, pivots, and polynomial coefficients. If that test is green, the largest libplacebo gap is more likely in WGSL sampling/reshape/tone/gamut mapping or frame/RPU alignment than in Rust metadata packing.
 - Rust `parse_rpu_metadata` now uses the MIT `dolby_vision` crate to parse real HEVC type-62 RPU payloads and fill compact metadata with Dolby matrices, offsets, source PQ, DV Level 1 max/avg PQ, pivots, and polynomial/MMR coefficient slots. It also retries ffmpeg single-packet RPU payloads with CRC-validated tail trimming because Annex-B copy probes can leave non-RPU bytes after the real RPU terminator. It is still pending final libplacebo parity for pivot interpretation, per-piece method/order packing, and shader application.
 - The browser WASM package is built with rustup stable + `wasm32-unknown-unknown` and `wasm-bindgen-cli` 0.2.121 via `npm run build:wasm`.
@@ -149,6 +150,9 @@ npm run test:rust
 - [x] Avoid upper-clamping Dolby Vision nonlinear matrix output before PQ EOTF.
 - [x] Add FFmpeg-side-data golden coverage for compact RPU metadata fields.
 - [x] Use bilinear WGSL luma/chroma sampling with left chroma siting for current fixtures.
+- [x] Add `/bench` realtime fallback preview controls with target FPS, effective FPS, dropped-frame estimates, and wall-clock seek advancement.
+- [ ] Implement strict WebCodecs streaming realtime path: demux sample stream -> `VideoDecoder` -> `VideoFrame.copyTo()` -> WebGPU render.
+- [ ] Replace ffmpeg.wasm realtime fallback seek-per-frame loop with a streaming raw-frame adapter for short clips.
 - [ ] Port libplacebo-style post-DV color-map/gamut behavior beyond the simplified BT.2390/IPT diagnostic path.
 - [ ] Implement and validate libplacebo-aligned DV polynomial/MMR reshape in WGSL.
 - [ ] Add real SDR frame readback and pixel-error comparison against `sdr_reference.png`.

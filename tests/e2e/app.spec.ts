@@ -32,6 +32,10 @@ test('benchmark page emits a JSON timing report', async ({ page }) => {
   await expect(page.locator('#sdr-preview')).toBeVisible();
   await expect(page.locator('#sdr-preview-time')).toBeVisible();
   await expect(page.locator('#sdr-preview-seconds')).toBeVisible();
+  await expect(page.locator('#realtime-toggle')).toBeVisible();
+  await expect(page.locator('#realtime-toggle')).toBeDisabled();
+  await expect(page.locator('#realtime-fps')).toBeDisabled();
+  await expect(page.locator('#realtime-meta')).toContainText('idle');
   await expect(page.locator('#frame-rpu-meta')).toContainText('not selected');
   await expect(page.locator('#gpu-upload-meta')).toContainText('waiting');
   await expect(page.locator('#gpu-render-meta')).toContainText('waiting');
@@ -63,6 +67,7 @@ test('benchmark page parses a selected MP4 fixture', async ({ page }) => {
   await expect(page.locator('#decode-meta')).not.toContainText('not run');
   await expect(page.locator('#ffmpeg-raw-probe')).toBeVisible();
   await expect(page.locator('#sdr-preview-time')).toBeVisible();
+  await expect(page.locator('#realtime-toggle')).toBeVisible();
 
   await expect.poll(async () => {
     const report = await page.locator('#report-json').textContent();
@@ -78,6 +83,8 @@ test('benchmark page parses a selected MP4 fixture', async ({ page }) => {
   expect(finalParsed.webCodecs).not.toBeNull();
   expect(finalParsed.webCodecs).toHaveProperty('copyTo');
   expect(finalParsed).toHaveProperty('rpuMetadata');
+  expect(finalParsed).toHaveProperty('realtimePreview');
+  expect(finalParsed.realtimePreview.status).toBe('idle');
 });
 
 test('benchmark page parses a selected MKV fixture without MP4 moov failure', async ({ page }) => {
@@ -92,6 +99,7 @@ test('benchmark page parses a selected MKV fixture without MP4 moov failure', as
   await expect(page.locator('#decode-meta')).not.toContainText('not run');
   await expect(page.locator('#ffmpeg-raw-probe')).toBeVisible();
   await expect(page.locator('#sdr-preview-time')).toBeVisible();
+  await expect(page.locator('#realtime-toggle')).toBeVisible();
 
   const report = await page.locator('#report-json').textContent();
   const parsed = JSON.parse(report ?? '{}');

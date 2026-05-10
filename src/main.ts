@@ -25,6 +25,13 @@ import { renderI420P10SdrWithWebGpu, type WebGpuSdrRenderProbe } from './core/we
 import { uploadI420P10ToWebGpu, type WebGpuUploadProbe } from './core/webgpu-upload';
 import type { DecodedFrameProbe } from './core/webcodecs';
 import {
+  clampRealtimeTargetFps,
+  createRealtimePreviewReport,
+  realtimeSecondsForWallClock,
+  updateRealtimeFrameReport,
+  type RealtimePreviewReport,
+} from './core/realtime-preview';
+import {
   comparePreviewToReference,
   diagnoseReferenceGap,
   type PixelErrorStats,
@@ -155,6 +162,7 @@ function renderBench() {
     },
     referenceCompare: null as PixelErrorStats | null,
     referenceDiagnosis: null as ReferenceGapDiagnosis | null,
+    realtimePreview: createRealtimePreviewReport(),
     parseError: null as string | null,
     summary,
   };
@@ -255,6 +263,19 @@ function renderBench() {
               <input id="sdr-preview-seconds" type="number" min="0" max="60" step="0.25" value="0" disabled />
             </label>
           </div>
+          <div class="realtime-controls" aria-label="Realtime SDR preview controls">
+            <button id="realtime-toggle" class="secondary-button realtime-button" type="button" disabled>Start realtime preview</button>
+            <label class="seconds-field" for="realtime-fps">
+              <span>target fps</span>
+              <input id="realtime-fps" type="number" min="0.25" max="4" step="0.25" value="1" disabled />
+            </label>
+          </div>
+          <dl class="debug-list compact realtime-meta" id="realtime-meta">
+            <dt>status</dt><dd>idle</dd>
+            <dt>adapter</dt><dd>waiting</dd>
+            <dt>rate</dt><dd>0.00 fps</dd>
+            <dt>frames</dt><dd>0 rendered, 0 dropped</dd>
+          </dl>
           <div class="viewer-meta" id="sdr-preview-meta">
             <span>Debug preview waiting</span>
             <span>Raw luma diagnostic from ffmpeg.wasm I420P10</span>
@@ -298,10 +319,15 @@ function renderBench() {
   const previewTimeRange = document.querySelector<HTMLInputElement>('#sdr-preview-time');
   const previewSecondsInput = document.querySelector<HTMLInputElement>('#sdr-preview-seconds');
   const previewModeButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-preview-mode]')];
+  const realtimeToggle = document.querySelector<HTMLButtonElement>('#realtime-toggle');
+  const realtimeFpsInput = document.querySelector<HTMLInputElement>('#realtime-fps');
+  const realtimeMeta = document.querySelector<HTMLElement>('#realtime-meta');
   let activeTrack: Mp4VideoTrack | null = null;
   let activeParsedSource: ParsedMediaSource | null = null;
   let selectionVersion = 0;
   let isRenderingRawPreview = false;
+  let realtimeAbort: AbortController | null = null;
+  let realtimeRunVersion = 0;
   let previewMode: RawPreviewMode = 'raw-luma';
   let activeReference: ReferenceImage | null = null;
   let lastSdrPreview: SdrPreviewImage | null = null;
@@ -314,6 +340,53 @@ function renderBench() {
       }, 2);
     }
   };
+
+  const realtimeAdapterLabel = () => {
+    const adapter = report.decoderAdapter;
+    if (adapter?.selected === 'webcodecs') return 'webcodecs';
+    if (adapter?.ffmpegWasm?.available || adapter?.selected === 'ffmpeg.wasm') return 'ffmpeg.wasm';
+    return null;
+  };
+
+  const updateRealtimeMeta = (preview: RealtimePreviewReport = report.realtimePreview) => {
+    report.realtimePreview = preview;
+    if (realtimeFpsInput) realtimeFpsInput.value = preview.targetFps.toFixed(2);
+    if (realtimeToggle) {
+      realtimeToggle.textContent = preview.status === 'running' ? 'Stop realtime preview' : 'Start realtime preview';
+    }
+    if (!realtimeMeta) return;
+    const frameMs = preview.lastFrameMs == null ? 'waiting' : `${preview.lastFrameMs.toFixed(1)} ms`;
+    const avgMs = preview.averageFrameMs == null ? 'waiting' : `${preview.averageFrameMs.toFixed(1)} ms`;
+    realtimeMeta.innerHTML = `
+      <dt>status</dt><dd>${preview.status}</dd>
+      <dt>adapter</dt><dd>${preview.adapter ?? 'waiting'}</dd>
+      <dt>rate</dt><dd>${preview.effectiveFps.toFixed(2)} fps / target ${preview.targetFps.toFixed(2)}</dd>
+      <dt>frames</dt><dd>${preview.renderedFrames} rendered, ${preview.droppedFrames} dropped</dd>
+      <dt>frame ms</dt><dd>${frameMs}, avg ${avgMs}</dd>
+      <dt>time</dt><dd>${preview.currentSeconds == null ? 'waiting' : formatPreviewSeconds(preview.currentSeconds)}</dd>
+      ${preview.note ? `<dt>note</dt><dd>${preview.note}</dd>` : ''}
+      ${preview.error ? `<dt>error</dt><dd>${preview.error}</dd>` : ''}
+    `;
+  };
+
+  const stopRealtimePreview = (status: RealtimePreviewReport['status'] = 'stopped', error: string | null = null) => {
+    realtimeRunVersion += 1;
+    realtimeAbort?.abort();
+    realtimeAbort = null;
+    const adapter = report.realtimePreview.adapter ?? realtimeAdapterLabel();
+    updateRealtimeMeta({
+      ...report.realtimePreview,
+      adapter,
+      status,
+      error,
+      note: report.realtimePreview.note,
+    });
+    if (realtimeToggle) realtimeToggle.textContent = 'Start realtime preview';
+    setPreviewControlsDisabled(false);
+    updateReport();
+  };
+
+  const isRealtimeRunning = (preview: RealtimePreviewReport): boolean => preview.status === 'running';
 
   const updateFrameRpuMeta = (selection: RpuFrameSelection | null, options: { preserveMetadata?: boolean } = {}) => {
     report.frameRpu = selection
@@ -503,10 +576,14 @@ function renderBench() {
   };
 
   const setPreviewControlsDisabled = (disabled: boolean) => {
-    const shouldDisable = disabled || !activeTrack?.hevcConfig || isRenderingRawPreview;
-    if (previewTimeRange) previewTimeRange.disabled = shouldDisable;
-    if (previewSecondsInput) previewSecondsInput.disabled = shouldDisable;
-    if (ffmpegRawProbe) ffmpegRawProbe.disabled = shouldDisable;
+    const realtimeRunning = report.realtimePreview.status === 'running';
+    const baseDisabled = disabled || !activeTrack?.hevcConfig;
+    const manualDisabled = baseDisabled || isRenderingRawPreview || realtimeRunning;
+    if (previewTimeRange) previewTimeRange.disabled = manualDisabled;
+    if (previewSecondsInput) previewSecondsInput.disabled = manualDisabled;
+    if (ffmpegRawProbe) ffmpegRawProbe.disabled = manualDisabled;
+    if (realtimeToggle) realtimeToggle.disabled = !realtimeRunning && (baseDisabled || isRenderingRawPreview);
+    if (realtimeFpsInput) realtimeFpsInput.disabled = baseDisabled || isRenderingRawPreview || realtimeRunning;
   };
 
   const clampPreviewSeconds = (seconds: number) => {
@@ -803,6 +880,151 @@ function renderBench() {
     setPreviewControlsDisabled(false);
   };
 
+  const runRealtimePreview = async () => {
+    const file = fileInput?.files?.[0];
+    const track = activeTrack;
+    if (!file || !track?.hevcConfig || report.realtimePreview.status === 'running') return;
+
+    const targetFps = clampRealtimeTargetFps(Number(realtimeFpsInput?.value ?? report.realtimePreview.targetFps));
+    const adapter = realtimeAdapterLabel();
+    const hasStrictRealtime = adapter === 'webcodecs' && report.decoderAdapter?.webCodecs?.format === 'I420P10';
+    const realtimeAdapter = 'ffmpeg.wasm' as const;
+    const note = hasStrictRealtime
+      ? 'WebCodecs strict realtime is eligible; this control currently runs the ffmpeg.wasm fallback preview until streaming copyTo is wired.'
+      : 'ffmpeg.wasm fallback preview advances on wall clock and skips ahead when decode is slower than target FPS.';
+    const startedAtMs = performance.now();
+    const startSeconds = readPreviewSeconds();
+    const runVersion = selectionVersion;
+    const runId = realtimeRunVersion + 1;
+    realtimeRunVersion = runId;
+    realtimeAbort?.abort();
+    realtimeAbort = new AbortController();
+    const signal = realtimeAbort.signal;
+
+    updateRealtimeMeta({
+      ...createRealtimePreviewReport(targetFps),
+      adapter: realtimeAdapter,
+      status: 'running',
+      currentSeconds: startSeconds,
+      note,
+      error: null,
+    });
+    setPreviewControlsDisabled(false);
+    updateSdrPreviewStatus([
+      `Realtime preview running from ${formatPreviewSeconds(startSeconds)}`,
+      note,
+    ]);
+    updateReport();
+
+    while (!signal.aborted && runId === realtimeRunVersion && runVersion === selectionVersion) {
+      const frameStartedAt = performance.now();
+      const seconds = realtimeSecondsForWallClock({
+        startSeconds,
+        startedAtMs,
+        nowMs: frameStartedAt,
+        durationSeconds: previewDurationLimit(),
+      });
+      writePreviewSeconds(seconds, false);
+      const maxSeconds = previewDurationLimit();
+      if (seconds >= maxSeconds && maxSeconds > 0) {
+        updateRealtimeMeta({ ...report.realtimePreview, status: 'ended', currentSeconds: seconds });
+        break;
+      }
+
+      isRenderingRawPreview = true;
+      setPreviewControlsDisabled(false);
+      try {
+        const ffmpegWasm = await probeFfmpegWasmAdapter(file, track, {
+          decodeRawFrame: true,
+          seekSeconds: seconds,
+          timeoutMs: 60_000,
+        });
+        if (signal.aborted || runId !== realtimeRunVersion || runVersion !== selectionVersion) break;
+        if (!report.decoderAdapter) {
+          report.decoderAdapter = {
+            selected: 'ffmpeg.wasm',
+            status: 'fallback-available',
+            webCodecs: report.webCodecs,
+            ffmpegWasm,
+            fallbackReason: 'Realtime fallback preview requested.',
+          };
+        } else {
+          report.decoderAdapter.ffmpegWasm = ffmpegWasm;
+          report.decoderAdapter.selected = ffmpegWasm.available ? 'ffmpeg.wasm' : report.decoderAdapter.selected;
+          report.decoderAdapter.status = ffmpegWasm.rawFrame.ok ? 'fallback-available' : 'failed';
+        }
+        updateDecodeMeta(report.decoderAdapter);
+
+        const rawFrame = ffmpegWasm.rawFrame;
+        if (!rawFrame.ok || !rawFrame.data) {
+          updateRealtimeMeta({
+            ...report.realtimePreview,
+            status: 'failed',
+            error: rawFrame.error ?? ffmpegWasm.error ?? 'ffmpeg.wasm realtime raw-frame decode failed.',
+          });
+          break;
+        }
+
+        if (shouldProbeRpuPacketWithFfmpeg()) {
+          const packetProbe = await probeFfmpegHevcPacket(file, { seekSeconds: seconds });
+          if (signal.aborted || runId !== realtimeRunVersion || runVersion !== selectionVersion) break;
+          updateFrameRpuMeta(packetProbe.ok && packetProbe.data
+            ? inspectRpuAnnexBPacket(packetProbe.data, packetProbe.seekSeconds)
+            : {
+                requestedSeconds: seconds,
+                status: 'invalid-sample',
+                sampleIndex: null,
+                timestampUs: Math.round(seconds * 1_000_000),
+                durationUs: null,
+                isSync: null,
+                rpuNalUnits: 0,
+                firstRpuNalOffset: null,
+                firstRpuNalSize: null,
+                firstRpuNalHex: null,
+                firstRpuPayload: null,
+                error: packetProbe.error ?? 'ffmpeg.wasm HEVC packet probe failed.',
+              });
+        }
+
+        await renderRawFrameForCurrentMode(rawFrame.data, track, rawFrame.seekSeconds, rawFrame.elapsedMs, runVersion);
+        if (signal.aborted || runId !== realtimeRunVersion || runVersion !== selectionVersion) break;
+        const frameElapsedMs = performance.now() - frameStartedAt;
+        updateRealtimeMeta(updateRealtimeFrameReport(report.realtimePreview, {
+          nowMs: performance.now(),
+          startedAtMs,
+          frameElapsedMs,
+          currentSeconds: seconds,
+        }));
+        updateReport();
+        const frameIntervalMs = 1000 / targetFps;
+        const delayMs = Math.max(0, frameIntervalMs - (performance.now() - frameStartedAt));
+        if (delayMs > 0) {
+          await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+        }
+      } catch (error) {
+        updateRealtimeMeta({
+          ...report.realtimePreview,
+          status: 'failed',
+          error: error instanceof Error ? error.message : String(error),
+        });
+        break;
+      } finally {
+        isRenderingRawPreview = false;
+        setPreviewControlsDisabled(false);
+      }
+    }
+
+    if (runId === realtimeRunVersion && isRealtimeRunning(report.realtimePreview)) {
+      updateRealtimeMeta({ ...report.realtimePreview, status: signal.aborted ? 'stopped' : 'ended' });
+    }
+    if (runId === realtimeRunVersion) {
+      realtimeAbort = null;
+    }
+    isRenderingRawPreview = false;
+    setPreviewControlsDisabled(false);
+    updateReport();
+  };
+
   const updateTrackMeta = (
     track: Mp4VideoTrack | null,
     brands: string[] = [],
@@ -936,6 +1158,9 @@ function renderBench() {
     activeParsedSource = null;
     report.parseError = null;
     isRenderingRawPreview = false;
+    stopRealtimePreview('stopped');
+    report.realtimePreview = createRealtimePreviewReport(Number(realtimeFpsInput?.value ?? 1));
+    updateRealtimeMeta();
     setPreviewMode('raw-luma');
     if (ffmpegRawProbe) ffmpegRawProbe.textContent = 'Render selected SDR frame';
     writePreviewSeconds(0, false);
@@ -1009,12 +1234,26 @@ function renderBench() {
         report.webCodecs = report.decoderAdapter.webCodecs;
         setPreviewControlsDisabled(false);
         updateDecodeMeta(report.decoderAdapter);
+        updateRealtimeMeta({
+          ...report.realtimePreview,
+          adapter: realtimeAdapterLabel(),
+          note: report.decoderAdapter.selected === 'webcodecs'
+            ? 'Strict realtime decode may be possible once streaming VideoFrame.copyTo is enabled.'
+            : 'WebCodecs did not provide the strict I420P10 path; realtime preview will use ffmpeg.wasm fallback.',
+        });
         if (report.decoderAdapter.selected === 'ffmpeg.wasm' && report.decoderAdapter.ffmpegWasm?.available) {
           void runFfmpegRawPreview(file, track, version, 'Automatic ffmpeg.wasm raw-frame probe after WebCodecs fallback.', 0);
         }
       } else if (track) {
         updateDecodeSkipped(track);
         setPreviewControlsDisabled(true);
+        updateRealtimeMeta({
+          ...report.realtimePreview,
+          adapter: null,
+          status: 'idle',
+          note: null,
+          error: 'Realtime DV preview requires an HEVC/DV track.',
+        });
       }
     } catch (error) {
       report.parseError = error instanceof Error ? error.message : String(error);
@@ -1023,6 +1262,12 @@ function renderBench() {
       updateDecodeMeta(null);
       updateGpuRenderMeta(null);
       setPreviewControlsDisabled(true);
+      updateRealtimeMeta({
+        ...report.realtimePreview,
+        adapter: null,
+        status: 'failed',
+        error: report.parseError,
+      });
     }
     updateReport();
   });
@@ -1059,6 +1304,24 @@ function renderBench() {
     if (!file || !track || !track.hevcConfig || isRenderingRawPreview) return;
     await runFfmpegRawPreview(file, track, selectionVersion, reason);
   };
+
+  realtimeToggle?.addEventListener('click', () => {
+    if (report.realtimePreview.status === 'running') {
+      stopRealtimePreview('stopped');
+      return;
+    }
+    void runRealtimePreview();
+  });
+
+  realtimeFpsInput?.addEventListener('change', () => {
+    const targetFps = clampRealtimeTargetFps(Number(realtimeFpsInput.value));
+    updateRealtimeMeta({
+      ...report.realtimePreview,
+      targetFps,
+      note: report.realtimePreview.note ?? 'Target FPS applies to the next realtime preview run.',
+    });
+    updateReport();
+  });
 
   previewTimeRange?.addEventListener('input', () => {
     writePreviewSeconds(Number(previewTimeRange.value), false);

@@ -172,6 +172,25 @@ video {
   margin-top: 14px;
 }
 
+.realtime-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 132px;
+  gap: 12px;
+  align-items: end;
+  margin-top: 12px;
+}
+
+.realtime-button {
+  margin-top: 0;
+  background: #18201f;
+  color: #f3f0e8;
+}
+
+.realtime-meta {
+  padding-top: 12px;
+  border-top: 1px solid rgba(24, 32, 31, 0.22);
+}
+
 .time-slider,
 .seconds-field {
   display: grid;
@@ -338,6 +357,10 @@ pre {
   }
 
   .preview-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .realtime-controls {
     grid-template-columns: 1fr;
   }
 }
