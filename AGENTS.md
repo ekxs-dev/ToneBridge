@@ -87,6 +87,7 @@ npm run test:rust
 - Rust `parse_rpu_metadata` now uses the MIT `dolby_vision` crate to parse real HEVC type-62 RPU payloads and fill compact metadata with Dolby matrices, offsets, source PQ, pivots, and polynomial/MMR coefficient slots. It also retries ffmpeg single-packet RPU payloads with CRC-validated tail trimming because Annex-B copy probes can leave non-RPU bytes after the real RPU terminator. It is still pending final libplacebo parity for pivot interpretation, per-piece method/order packing, and shader application.
 - The browser WASM package is built with rustup stable + `wasm32-unknown-unknown` and `wasm-bindgen-cli` 0.2.121 via `npm run build:wasm`.
 - WGSL currently contains a debug compute path and simplified preview modes. It now applies ABI v2 RPU reshape metadata for diagnostics, and the MMR basis terms match libplacebo's `x*y`, `x*z`, `y*z`, `x*y*z` layout. The result is not yet full libplacebo/reference validated.
+- Chrome currently rejects `meta` as a WGSL local identifier. Keep shader locals away from reserved keywords; `tests/unit/wgsl.test.ts` guards the regression that broke `/bench` WebGPU rendering.
 
 ## PR / Commit Guidance
 - Suggested title format: `[lumabridge] <Title>`.
@@ -125,6 +126,7 @@ npm run test:rust
 - [x] Wire ffmpeg.wasm raw-frame output to a live WebGPU buffer upload probe on `/bench`.
 - [x] Add WebGPU compute shader SDR debug render/readback for raw I420P10 preview frames.
 - [x] Align WGSL MMR reshape cross terms with libplacebo's coefficient basis.
+- [x] Fix Chrome WGSL shader compilation failure caused by reserved local identifier `meta`.
 - [ ] Implement and validate libplacebo-aligned DV polynomial/MMR reshape in WGSL.
 - [ ] Add real SDR frame readback and pixel-error comparison against `sdr_reference.png`.
 - [ ] Replace synthetic benchmark timings with measured demux/decode/copy/upload/shader/present timings.

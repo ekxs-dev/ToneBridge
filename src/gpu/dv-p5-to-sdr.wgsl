@@ -143,14 +143,14 @@ fn reshape_component(component: u32, signal: f32, sig: vec3<f32>) -> f32 {
     }
   }
 
-  let meta = piece_meta(component, pieceIndex);
+  let pieceInfo = piece_meta(component, pieceIndex);
   var outSignal = signal;
-  if (meta.x < 0.5) {
+  if (pieceInfo.x < 0.5) {
     outSignal = dovi_poly(signal, poly_coeffs(component, pieceIndex).xyz);
   } else {
-    let order = max(1u, min(3u, u32(round(meta.w))));
+    let order = max(1u, min(3u, u32(round(pieceInfo.w))));
     let sigX = vec4<f32>(sig.x * sig.y, sig.x * sig.z, sig.y * sig.z, sig.x * sig.y * sig.z);
-    outSignal = meta.y;
+    outSignal = pieceInfo.y;
     let mmr0a = mmr_coeffs(component, pieceIndex, 0u, 0u);
     let mmr0b = mmr_coeffs(component, pieceIndex, 0u, 1u);
     outSignal = outSignal + dot(mmr0a.xyz, sig);

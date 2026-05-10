@@ -29,7 +29,7 @@ function identityPacked(): Float32Array {
 }
 
 function ensureWasm(): Promise<void> {
-  wasmReady ??= initWasm(wasmUrl).then(() => undefined);
+  wasmReady ??= initWasm({ module_or_path: wasmUrl }).then(() => undefined);
   return wasmReady;
 }
 
