@@ -3,6 +3,7 @@ import {
   bt1886Oetf,
   doviIptToLms,
   doviLmsToBt2020,
+  libplaceboSoftclipRgb,
   normalizeYuv10Sample,
   bt2390ToneMap,
   pqEotf,
@@ -109,11 +110,12 @@ export function convertI420P10ToSdrPreview(frame: I420P10Frame, maxWidth = 960):
         pqEotf(rgb2020Code[2]),
       ];
       const rgb709Nits = bt2020ToBt709(rgb2020Nits).map((value) => Math.max(0, value)) as [number, number, number];
-      const rgbSdr: [number, number, number] = [
-        bt1886Oetf(bt2390ToneMap(rgb709Nits[0])),
-        bt1886Oetf(bt2390ToneMap(rgb709Nits[1])),
-        bt1886Oetf(bt2390ToneMap(rgb709Nits[2])),
-      ];
+      const rgbMapped = libplaceboSoftclipRgb([
+        bt2390ToneMap(rgb709Nits[0]),
+        bt2390ToneMap(rgb709Nits[1]),
+        bt2390ToneMap(rgb709Nits[2]),
+      ]);
+      const rgbSdr: [number, number, number] = rgbMapped.map((value) => bt1886Oetf(value)) as [number, number, number];
       const offset = (y * width + x) * 4;
       const r = Math.round(rgbSdr[0] * 255);
       const g = Math.round(rgbSdr[1] * 255);
@@ -173,11 +175,12 @@ export function convertI420P10ToDoviP5BasePreview(frame: I420P10Frame, maxWidth 
       ];
       const rgb2020Nits = doviLmsToBt2020(lmsNits);
       const rgb709Nits = bt2020ToBt709(rgb2020Nits).map((value) => Math.max(0, value)) as [number, number, number];
-      const rgbSdr: [number, number, number] = [
-        bt1886Oetf(bt2390ToneMap(rgb709Nits[0])),
-        bt1886Oetf(bt2390ToneMap(rgb709Nits[1])),
-        bt1886Oetf(bt2390ToneMap(rgb709Nits[2])),
-      ];
+      const rgbMapped = libplaceboSoftclipRgb([
+        bt2390ToneMap(rgb709Nits[0]),
+        bt2390ToneMap(rgb709Nits[1]),
+        bt2390ToneMap(rgb709Nits[2]),
+      ]);
+      const rgbSdr: [number, number, number] = rgbMapped.map((value) => bt1886Oetf(value)) as [number, number, number];
       const offset = (y * width + x) * 4;
       const r = Math.round(rgbSdr[0] * 255);
       const g = Math.round(rgbSdr[1] * 255);

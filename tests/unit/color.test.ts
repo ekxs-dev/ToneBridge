@@ -9,6 +9,8 @@ import {
   doviLmsToBt2020,
   LIBPLACEBO_HDR_BLACK_NITS,
   LIBPLACEBO_SDR_WHITE_NITS,
+  libplaceboSoftclip,
+  libplaceboSoftclipRgb,
   normalizeYuv10Sample,
   pqEotf,
   pqOetf,
@@ -89,5 +91,18 @@ describe('color math references', () => {
       pqOetf(LIBPLACEBO_HDR_BLACK_NITS),
       pqOetf(LIBPLACEBO_SDR_WHITE_NITS / 1000),
     )).toBeCloseTo(pqOetf(LIBPLACEBO_SDR_WHITE_NITS / 1000), 4);
+  });
+
+  it('applies libplacebo-style RGB softclip for out-of-gamut highlights', () => {
+    expect(libplaceboSoftclip(0.5, 2)).toBeCloseTo(0.5);
+    expect(libplaceboSoftclip(2, 2)).toBeCloseTo(1);
+    expect(libplaceboSoftclip(1, 2)).toBeGreaterThan(0.85);
+    expect(libplaceboSoftclip(1, 2)).toBeLessThan(0.89);
+
+    const clipped = libplaceboSoftclipRgb([2, 1, -0.1]);
+    expect(clipped[0]).toBeCloseTo(1);
+    expect(clipped[1]).toBeGreaterThan(0.85);
+    expect(clipped[1]).toBeLessThan(0.89);
+    expect(clipped[2]).toBe(0);
   });
 });

@@ -344,7 +344,7 @@ fn tone_map_bt2390_to_sdr(rgb2020Nits: vec3<f32>, inputMinPq: f32, inputMaxPq: f
     pq_eotf(outLmsPq.z)
   );
   let rgb709Linear = bt709_ipt_lms_to_rgb_for_color_map(outLmsNits) / vec3<f32>(libplaceboSdrWhiteNits);
-  return bt1886_oetf(rgb709Linear);
+  return bt1886_oetf(libplacebo_softclip_rgb(rgb709Linear));
 }
 
 fn srgb_encode(linear: vec3<f32>) -> vec3<f32> {
@@ -368,6 +368,36 @@ fn bt1886_oetf(linear: vec3<f32>) -> vec3<f32> {
   let lb = pow(minLum, 1.0 / 2.4);
   let lw = pow(maxLum, 1.0 / 2.4);
   return clamp((pow(value, vec3<f32>(1.0 / 2.4)) - vec3<f32>(lb)) / vec3<f32>(lw - lb), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+fn libplacebo_softclip(value: f32, source: f32, target: f32) -> f32 {
+  if (target == 0.0) {
+    return 0.0;
+  }
+  let peak = source / target;
+  let x = min(value / target, peak);
+  let knee = 0.70;
+  if (x <= knee || peak <= 1.0) {
+    return value;
+  }
+
+  let a = -knee * knee * (peak - 1.0) / (knee * knee - 2.0 * knee + peak);
+  let b = (knee * knee - 2.0 * knee * peak + peak) / max(0.000001, peak - 1.0);
+  let scale = (b * b + 2.0 * b * knee + knee * knee) / (b - a);
+  return scale * (x + a) / (x + b) * target;
+}
+
+fn libplacebo_softclip_rgb(rgb: vec3<f32>) -> vec3<f32> {
+  let target = 1.0;
+  let maxRgb = max(rgb.r, max(rgb.g, rgb.b));
+  if (maxRgb <= target) {
+    return max(rgb, vec3<f32>(0.0));
+  }
+  return max(vec3<f32>(
+    libplacebo_softclip(rgb.r, maxRgb, target),
+    libplacebo_softclip(rgb.g, maxRgb, target),
+    libplacebo_softclip(rgb.b, maxRgb, target)
+  ), vec3<f32>(0.0));
 }
 
 fn pack_rgba8(rgb: vec3<f32>) -> u32 {

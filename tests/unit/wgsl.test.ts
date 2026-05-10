@@ -17,7 +17,7 @@ describe('WGSL shader source', () => {
     expect(source).toContain('fn tone_map_bt2390_pq');
     expect(source).toContain('fn tone_map_bt2390_to_sdr');
     expect(source).toContain('fn bt1886_oetf');
-    expect(source).toContain('return bt1886_oetf(rgb709Linear)');
+    expect(source).toContain('return bt1886_oetf(libplacebo_softclip_rgb(rgb709Linear))');
     expect(source).toContain('blackPower');
     expect(source).toContain('gainInv');
     expect(source).toContain('let libplaceboSdrWhiteNits = 203.0');
@@ -25,6 +25,15 @@ describe('WGSL shader source', () => {
     expect(source).toContain('let effectiveInputMinPq = pq_oetf(libplaceboHdrBlackNits)');
     expect(source).toContain('let outputMinPq = pq_oetf(libplaceboSdrWhiteNits / 1000.0)');
     expect(source).not.toContain('tone_map_reinhard');
+  });
+
+  it('applies libplacebo-style RGB softclip before BT.1886 output', () => {
+    const source = fs.readFileSync(shaderPath, 'utf8');
+
+    expect(source).toContain('fn libplacebo_softclip(');
+    expect(source).toContain('let knee = 0.70');
+    expect(source).toContain('fn libplacebo_softclip_rgb');
+    expect(source).toContain('return bt1886_oetf(libplacebo_softclip_rgb(rgb709Linear))');
   });
 
   it('uses DV Level 1 max PQ as the tone mapping peak when present', () => {

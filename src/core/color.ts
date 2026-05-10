@@ -46,6 +46,35 @@ export function bt1886Oetf(linear: number, min = 1 / 1000, max = 1): number {
   return Math.min(1, Math.max(0, (value ** (1 / 2.4) - lb) / (lw - lb)));
 }
 
+export function libplaceboSoftclip(value: number, source: number, target = 1, knee = 0.7): number {
+  if (target === 0) return 0;
+  const peak = source / target;
+  const x = Math.min(value / target, peak);
+  if (x <= knee || peak <= 1) return value;
+
+  const a = -knee * knee * (peak - 1) / (knee * knee - 2 * knee + peak);
+  const b = (knee * knee - 2 * knee * peak + peak) / Math.max(1e-6, peak - 1);
+  const scale = (b * b + 2 * b * knee + knee * knee) / (b - a);
+  return scale * (x + a) / (x + b) * target;
+}
+
+export function libplaceboSoftclipRgb(rgb: [number, number, number], target = 1): [number, number, number] {
+  const maxRgb = Math.max(rgb[0], rgb[1], rgb[2]);
+  if (maxRgb <= target) {
+    return [
+      Math.max(0, rgb[0]),
+      Math.max(0, rgb[1]),
+      Math.max(0, rgb[2]),
+    ];
+  }
+
+  return [
+    Math.max(0, libplaceboSoftclip(rgb[0], maxRgb, target)),
+    Math.max(0, libplaceboSoftclip(rgb[1], maxRgb, target)),
+    Math.max(0, libplaceboSoftclip(rgb[2], maxRgb, target)),
+  ];
+}
+
 export function yuvBt2020ToRgb(y: number, u: number, v: number): [number, number, number] {
   const cb = u - 0.5;
   const cr = v - 0.5;
