@@ -202,6 +202,14 @@ fn dovi_lms_to_bt2020(lms: vec3<f32>) -> vec3<f32> {
   );
 }
 
+fn bt2020_rgb_to_ipt_lms_for_color_map(rgb: vec3<f32>) -> vec3<f32> {
+  return bt2020_rgb_to_ipt_lms(rgb);
+}
+
+fn bt709_ipt_lms_to_rgb_for_color_map(lms: vec3<f32>) -> vec3<f32> {
+  return bt709_ipt_lms_to_rgb(lms);
+}
+
 fn dovi_poly(signal: f32, coeffs: vec3<f32>) -> f32 {
   return (coeffs.z * signal + coeffs.y) * signal + coeffs.x;
 }
@@ -276,7 +284,8 @@ fn reshape_component(component: u32, signal: f32, sig: vec3<f32>) -> f32 {
 }
 
 fn tone_map_bt2390_pq(code: f32, inputMinPq: f32, inputMaxPq: f32, outputMinPq: f32) -> f32 {
-  let outputMaxPq = pq_oetf(100.0);
+  let libplaceboSdrWhiteNits = 203.0;
+  let outputMaxPq = pq_oetf(libplaceboSdrWhiteNits);
   let safeInputMin = clamp(inputMinPq, 0.0, max(inputMaxPq - 0.0001, 0.0));
   let safeInputMax = max(inputMaxPq, max(outputMaxPq, safeInputMin + 0.0001));
   let inputRange = max(0.000001, safeInputMax - safeInputMin);
@@ -311,8 +320,11 @@ fn tone_map_bt2390_pq(code: f32, inputMinPq: f32, inputMaxPq: f32, outputMinPq: 
 }
 
 fn tone_map_bt2390_to_sdr(rgb2020Nits: vec3<f32>, inputMinPq: f32, inputMaxPq: f32) -> vec3<f32> {
-  let targetNits = 100.0;
-  let lmsNits = bt2020_rgb_to_ipt_lms(max(rgb2020Nits, vec3<f32>(0.0)));
+  let libplaceboSdrWhiteNits = 203.0;
+  let libplaceboHdrBlackNits = 0.000001;
+  let effectiveInputMinPq = pq_oetf(libplaceboHdrBlackNits);
+  let outputMinPq = pq_oetf(libplaceboSdrWhiteNits / 1000.0);
+  let lmsNits = bt2020_rgb_to_ipt_lms_for_color_map(max(rgb2020Nits, vec3<f32>(0.0)));
   let lmsPq = vec3<f32>(
     pq_oetf(lmsNits.x),
     pq_oetf(lmsNits.y),
@@ -320,7 +332,7 @@ fn tone_map_bt2390_to_sdr(rgb2020Nits: vec3<f32>, inputMinPq: f32, inputMaxPq: f
   );
   let ipt = ipt_lms_to_ipt(lmsPq);
   let iOrig = max(ipt.x, 0.000001);
-  let mappedI = max(tone_map_bt2390_pq(ipt.x, inputMinPq, inputMaxPq, 0.0), 0.000001);
+  let mappedI = max(tone_map_bt2390_pq(ipt.x, effectiveInputMinPq, inputMaxPq, outputMinPq), 0.000001);
   let hullOrig = ((iOrig - 6.0) * iOrig + 9.0) * iOrig;
   let hullMapped = ((mappedI - 6.0) * mappedI + 9.0) * mappedI;
   let chromaScale = max(0.0, min(iOrig / mappedI, hullMapped / max(hullOrig, 0.000001)));
@@ -331,8 +343,8 @@ fn tone_map_bt2390_to_sdr(rgb2020Nits: vec3<f32>, inputMinPq: f32, inputMaxPq: f
     pq_eotf(outLmsPq.y),
     pq_eotf(outLmsPq.z)
   );
-  let rgb709Linear = bt709_ipt_lms_to_rgb(outLmsNits) / vec3<f32>(targetNits);
-  return bt709_oetf(rgb709Linear);
+  let rgb709Linear = bt709_ipt_lms_to_rgb_for_color_map(outLmsNits) / vec3<f32>(libplaceboSdrWhiteNits);
+  return bt1886_oetf(rgb709Linear);
 }
 
 fn srgb_encode(linear: vec3<f32>) -> vec3<f32> {
@@ -347,6 +359,15 @@ fn bt709_oetf(linear: vec3<f32>) -> vec3<f32> {
   let low = value * vec3<f32>(4.5);
   let high = vec3<f32>(1.099) * pow(value, vec3<f32>(0.45)) - vec3<f32>(0.099);
   return select(high, low, value < vec3<f32>(0.018));
+}
+
+fn bt1886_oetf(linear: vec3<f32>) -> vec3<f32> {
+  let value = max(linear, vec3<f32>(0.0));
+  let minLum = 1.0 / 1000.0;
+  let maxLum = 1.0;
+  let lb = pow(minLum, 1.0 / 2.4);
+  let lw = pow(maxLum, 1.0 / 2.4);
+  return clamp((pow(value, vec3<f32>(1.0 / 2.4)) - vec3<f32>(lb)) / vec3<f32>(lw - lb), vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
 fn pack_rgba8(rgb: vec3<f32>) -> u32 {

@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   bt2020ToBt709,
+  bt1886Oetf,
   bt709Oetf,
   bt2390ToneMap,
   bt2390ToneMapPq,
   doviIptToLms,
   doviLmsToBt2020,
+  LIBPLACEBO_HDR_BLACK_NITS,
+  LIBPLACEBO_SDR_WHITE_NITS,
   normalizeYuv10Sample,
   pqEotf,
   pqOetf,
@@ -34,6 +37,10 @@ describe('color math references', () => {
     expect(bt709Oetf(1)).toBeCloseTo(1);
     expect(bt709Oetf(0.018)).toBeCloseTo(0.081, 3);
     expect(bt709Oetf(0.18)).toBeCloseTo(0.409, 3);
+    expect(bt1886Oetf(1 / 1000)).toBeCloseTo(0);
+    expect(bt1886Oetf(1)).toBeCloseTo(1);
+    expect(bt1886Oetf(0.18)).toBeGreaterThan(0.45);
+    expect(bt1886Oetf(0.18)).toBeLessThan(0.47);
   });
 
   it('converts BT.2020 YUV to RGB and then BT.709', () => {
@@ -65,11 +72,22 @@ describe('color math references', () => {
   });
 
   it('keeps fixed tone mapping deterministic', () => {
+    expect(LIBPLACEBO_SDR_WHITE_NITS).toBe(203);
+    expect(LIBPLACEBO_HDR_BLACK_NITS).toBe(1e-6);
     expect(reinhardToneMap(100)).toBeCloseTo(0.5);
     expect(reinhardToneMap(0)).toBe(0);
     expect(bt2390ToneMap(1000, 1000, 100)).toBeCloseTo(1, 3);
+    expect(bt2390ToneMap(LIBPLACEBO_SDR_WHITE_NITS, 1000)).toBeGreaterThan(0.1);
+    expect(bt2390ToneMap(LIBPLACEBO_SDR_WHITE_NITS, 1000)).toBeLessThan(1);
     expect(bt2390ToneMap(100, 1000, 100)).toBeGreaterThan(0.1);
     expect(bt2390ToneMap(100, 1000, 100)).toBeLessThan(1);
     expect(bt2390ToneMapPq(pqOetf(1000), pqOetf(1000), pqOetf(100))).toBeCloseTo(pqOetf(100), 4);
+    expect(bt2390ToneMapPq(
+      pqOetf(0),
+      pqOetf(1000),
+      pqOetf(LIBPLACEBO_SDR_WHITE_NITS),
+      pqOetf(LIBPLACEBO_HDR_BLACK_NITS),
+      pqOetf(LIBPLACEBO_SDR_WHITE_NITS / 1000),
+    )).toBeCloseTo(pqOetf(LIBPLACEBO_SDR_WHITE_NITS / 1000), 4);
   });
 });

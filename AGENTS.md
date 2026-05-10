@@ -5,7 +5,7 @@
 - Goal: browser-side Dolby Vision Profile 5 to SDR preview/verification tooling.
 - Current state: test infrastructure, benchmark UI, fixtures, Rust/WASM parser skeleton, and WGSL shader skeleton are in place. The full demux -> WebCodecs -> `VideoFrame.copyTo()` -> WebGPU DV P5 pipeline is not complete yet.
 - Primary browser target: Chrome/Edge first.
-- Reference target: SDR BT.709, 100 nit, with sRGB display adaptation for page preview.
+- Reference target intent: SDR BT.709, 100 nit. Current generated/manual FFmpeg `libplacebo` references do not explicitly override target peak, so libplacebo's default `PL_COLOR_SDR_WHITE = 203 nit` and BT.1886-style `color_trc=bt709` mapping are the practical browser comparison target until references are regenerated with an explicit 100 nit policy.
 
 ## Repository Layout
 - `src/main.ts`: Vite app entry. Home page and `/bench` page are currently implemented here.
@@ -69,7 +69,7 @@ npm run test:rust
 - Current DV fixture was cut from `/path/to/input.mkv`.
 - `dv_p5_short.mp4` is HEVC Main10 DV P5 with RPU NAL units.
 - Current golden RPU count for `tests/fixtures/dv_p5_short.mp4`: `154`.
-- `sdr_reference.png` is generated with FFmpeg/libplacebo as the SDR reference frame.
+- `sdr_reference.png` is generated with FFmpeg/libplacebo as the SDR reference frame. The current command uses `color_trc=bt709`, which libplacebo maps as a BT.1886 display curve, and no explicit 100 nit target override.
 - Updating golden/reference files should be intentional and reviewed.
 
 ## Implementation Constraints
@@ -90,8 +90,8 @@ npm run test:rust
 - `tests/unit/rpu-metadata.test.ts` now checks compact RPU metadata against FFmpeg Dolby Vision side-data fields for the first fixture frame: matrices, offsets, source PQ, pivots, and polynomial coefficients. If that test is green, the largest libplacebo gap is more likely in WGSL sampling/reshape/tone/gamut mapping or frame/RPU alignment than in Rust metadata packing.
 - Rust `parse_rpu_metadata` now uses the MIT `dolby_vision` crate to parse real HEVC type-62 RPU payloads and fill compact metadata with Dolby matrices, offsets, source PQ, DV Level 1 max/avg PQ, pivots, and polynomial/MMR coefficient slots. It also retries ffmpeg single-packet RPU payloads with CRC-validated tail trimming because Annex-B copy probes can leave non-RPU bytes after the real RPU terminator. It is still pending final libplacebo parity for pivot interpretation, per-piece method/order packing, and shader application.
 - The browser WASM package is built with rustup stable + `wasm32-unknown-unknown` and `wasm-bindgen-cli` 0.2.121 via `npm run build:wasm`.
-- WGSL currently contains a debug compute path and simplified preview modes. It now applies ABI v2 RPU reshape metadata for diagnostics, the MMR basis terms and coefficient padding match libplacebo's `x*y`, `x*z`, `y*z`, `x*y*z` layout, the DV decode offset follows libplacebo's full-range `1024/1023` normalization, the DV nonlinear matrix output only clamps the lower bound before PQ EOTF like libplacebo, the DV post step avoids an extra PQ OETF/EOTF round trip, and the SDR diagnostic tone map uses a BT.2390-style IPT/PQ path using DV source min PQ and Level 1 max PQ when present instead of the old Reinhard path. The WebGPU/CPU SDR preview paths write BT.709 OETF output to match the libplacebo `color_trc=bt709` PNG reference, while raw luma remains an sRGB-ish structural diagnostic. The raw WebGPU preview samples luma/chroma bilinearly and assumes the current fixtures' `AVCHROMA_LOC_LEFT` 4:2:0 chroma siting. The result is not yet full libplacebo/reference validated.
-- Current libplacebo gap focus: `pl_shader_dovi_reshape` and the packed RPU fields now have good coverage, so the next largest known mismatch is the simplified WebGPU color-map/gamut path after DV decode. libplacebo's DV decode path is reshape -> nonlinear matrix/offset -> PQ EOTF -> `(HPE LMS->BT.2020 * linear matrix)` -> PQ OETF -> full `pl_shader_color_map_ex`; our WGSL still folds this into a simplified BT.2390/IPT SDR mapping without libplacebo's full gamut 3D LUT/perceptual mapping.
+- WGSL currently contains a debug compute path and simplified preview modes. It now applies ABI v2 RPU reshape metadata for diagnostics, the MMR basis terms and coefficient padding match libplacebo's `x*y`, `x*z`, `y*z`, `x*y*z` layout, the DV decode offset follows libplacebo's full-range `1024/1023` normalization, the DV nonlinear matrix output only clamps the lower bound before PQ EOTF like libplacebo, the DV post step avoids an extra PQ OETF/EOTF round trip, and the SDR diagnostic tone map uses a BT.2390-style IPT/PQ path using Level 1 max PQ when present instead of the old Reinhard path. For practical comparison against the current FFmpeg/libplacebo PNG command, WebGPU/CPU SDR diagnostics use libplacebo's default `PL_COLOR_SDR_WHITE = 203 nit`, force PQ black to `PL_COLOR_HDR_BLACK`, use an SDR black point of white/1000, and write BT.1886-style output for `color_trc=bt709`; raw luma remains an sRGB-ish structural diagnostic. The raw WebGPU preview samples luma/chroma bilinearly and assumes the current fixtures' `AVCHROMA_LOC_LEFT` 4:2:0 chroma siting. The result is not yet full libplacebo/reference validated.
+- Current libplacebo gap focus: `pl_shader_dovi_reshape` and the packed RPU fields now have good coverage, so the next largest known mismatch is the simplified WebGPU color-map/gamut path after DV decode. libplacebo's DV decode path is reshape -> nonlinear matrix/offset -> PQ EOTF -> `(HPE LMS->BT.2020 * linear matrix)` -> PQ OETF -> full `pl_shader_color_map_ex`; our WGSL still approximates that color map with a direct BT.2390/IPT path and does not yet implement libplacebo's full perceptual gamut 3D LUT.
 - Chrome currently rejects `meta` as a WGSL local identifier. Keep shader locals away from reserved keywords; `tests/unit/wgsl.test.ts` guards the regression that broke `/bench` WebGPU rendering.
 
 ## PR / Commit Guidance
@@ -142,9 +142,10 @@ npm run test:rust
 - [x] Add reference-gap diagnosis to explain likely libplacebo mismatch causes from MAE/bias/pipeline context.
 - [x] Use hybrid ffmpeg.wasm seek for selected raw-frame and HEVC packet probes.
 - [x] Replace diagnostic Reinhard tone mapping with a BT.2390-style IPT/PQ SDR path.
-- [x] Carry DV source min PQ into the WGSL BT.2390 black-point adaptation path.
+- [x] Align SDR diagnostic white/black points with current libplacebo reference behavior: `PL_COLOR_SDR_WHITE = 203 nit`, `PL_COLOR_HDR_BLACK`, and SDR black = white/1000.
+- [x] Use BT.1886-style output for SDR/RPU preview bytes to match FFmpeg/libplacebo `color_trc=bt709` references.
+- [x] Carry DV source min PQ into the WGSL metadata path for reporting, while using libplacebo PQ black for the current BT.2390 diagnostic mapping.
 - [x] Avoid upper-clamping Dolby Vision nonlinear matrix output before PQ EOTF.
-- [x] Use BT.709 OETF for SDR/RPU preview bytes to match libplacebo PNG references.
 - [x] Add FFmpeg-side-data golden coverage for compact RPU metadata fields.
 - [x] Use bilinear WGSL luma/chroma sampling with left chroma siting for current fixtures.
 - [ ] Port libplacebo-style post-DV color-map/gamut behavior beyond the simplified BT.2390/IPT diagnostic path.

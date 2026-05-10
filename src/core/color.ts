@@ -1,3 +1,6 @@
+export const LIBPLACEBO_SDR_WHITE_NITS = 203;
+export const LIBPLACEBO_HDR_BLACK_NITS = 1e-6;
+
 export function normalizeYuv10Sample(sample: number, range: 'full' | 'limited', channel: 'y' | 'uv'): number {
   if (range === 'full') {
     return sample / 1023;
@@ -34,6 +37,13 @@ export function bt709Oetf(linear: number): number {
   const value = Math.min(1, Math.max(0, linear));
   if (value < 0.018) return value * 4.5;
   return 1.099 * value ** 0.45 - 0.099;
+}
+
+export function bt1886Oetf(linear: number, min = 1 / 1000, max = 1): number {
+  const value = Math.max(0, linear);
+  const lb = min ** (1 / 2.4);
+  const lw = max ** (1 / 2.4);
+  return Math.min(1, Math.max(0, (value ** (1 / 2.4) - lb) / (lw - lb)));
 }
 
 export function yuvBt2020ToRgb(y: number, u: number, v: number): [number, number, number] {
@@ -122,9 +132,11 @@ export function bt2390ToneMapPq(
   return Math.min(outputMaxPq, Math.max(outputMinPq, x * inputRange + inputMinPq));
 }
 
-export function bt2390ToneMap(nits: number, sourceMaxNits = 1000, targetNits = 100): number {
+export function bt2390ToneMap(nits: number, sourceMaxNits = 1000, targetNits = LIBPLACEBO_SDR_WHITE_NITS): number {
   const inputMaxPq = pqOetf(Math.max(targetNits, sourceMaxNits));
   const outputMaxPq = pqOetf(targetNits);
-  const mappedPq = bt2390ToneMapPq(pqOetf(nits), inputMaxPq, outputMaxPq);
+  const outputMinPq = pqOetf(targetNits / 1000);
+  const inputMinPq = pqOetf(LIBPLACEBO_HDR_BLACK_NITS);
+  const mappedPq = bt2390ToneMapPq(pqOetf(nits), inputMaxPq, outputMaxPq, inputMinPq, outputMinPq);
   return pqEotf(mappedPq) / targetNits;
 }
