@@ -5,6 +5,7 @@ import {
   convertI420P10ToSdrPreview,
   createI420P10Frame,
   expectedI420P10ByteLength,
+  inspectI420P10Frame,
 } from '../../src/core/raw-frame';
 
 function writeU16LE(data: Uint8Array, sampleIndex: number, value: number): void {
@@ -78,5 +79,23 @@ describe('raw I420P10 frame preview', () => {
     expect(Math.abs(preview.stats.averageRgb[0] - preview.stats.averageRgb[1])).toBeLessThan(4);
     expect(Math.abs(preview.stats.averageRgb[1] - preview.stats.averageRgb[2])).toBeLessThan(4);
     expect(preview.data[3]).toBe(255);
+  });
+
+  it('inspects raw Y/U/V plane sample ranges for byte-level diagnostics', () => {
+    const data = new Uint8Array(expectedI420P10ByteLength(4, 2));
+    const frame = createI420P10Frame(data, 4, 2);
+    for (let index = 0; index < 8; index += 1) writeU16LE(data, frame.yOffset + index, index * 10);
+    writeU16LE(data, frame.uOffset, 512);
+    writeU16LE(data, frame.uOffset + 1, 513);
+    writeU16LE(data, frame.vOffset, 514);
+    writeU16LE(data, frame.vOffset + 1, 515);
+
+    const stats = inspectI420P10Frame(frame);
+
+    expect(stats.y.min).toBe(0);
+    expect(stats.y.max).toBe(70);
+    expect(stats.y.nonZeroSamples).toBe(7);
+    expect(stats.u.average).toBe(512.5);
+    expect(stats.v.firstSamples).toEqual([514, 515]);
   });
 });

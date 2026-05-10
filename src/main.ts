@@ -16,6 +16,8 @@ import {
   convertI420P10ToLumaPreview,
   convertI420P10ToSdrPreview,
   createI420P10Frame,
+  inspectI420P10Frame,
+  type RawFrameStats,
   type RawPreviewMode,
   type SdrPreviewImage,
 } from './core/raw-frame';
@@ -150,6 +152,7 @@ function renderBench() {
     rpuMetadata: null as RpuMetadataProbe | null,
     gpuUpload: null as WebGpuUploadProbe | null,
     gpuRender: null as WebGpuSdrRenderProbe | null,
+    rawFrameStats: null as RawFrameStats | null,
     sdrPreview: null as null | {
       width: number;
       height: number;
@@ -472,11 +475,16 @@ function renderBench() {
       `;
       return;
     }
+    const raw = report.rawFrameStats;
+    const rawLabel = raw
+      ? `Y ${raw.y.min}-${raw.y.max} avg ${raw.y.average.toFixed(1)}, U ${raw.u.min}-${raw.u.max}, V ${raw.v.min}-${raw.v.max}`
+      : null;
     gpuRenderMeta.innerHTML = `
       <dt>status</dt><dd>${probe.ok ? `rendered ${probe.width} x ${probe.height}` : probe.attempted ? 'failed' : 'unavailable'}${probe.elapsedMs ? ` in ${probe.elapsedMs.toFixed(1)} ms` : ''}</dd>
       <dt>shader</dt><dd>${probe.shaderElapsedMs ? `${probe.shaderElapsedMs.toFixed(1)} ms` : 'not run'}</dd>
       <dt>readback</dt><dd>${probe.readbackElapsedMs ? `${probe.readbackElapsedMs.toFixed(1)} ms` : 'not run'}</dd>
       <dt>metadata</dt><dd>${probe.metadataSource}</dd>
+      ${rawLabel ? `<dt>raw stats</dt><dd>${rawLabel}</dd>` : ''}
       ${probe.averageRgb ? `<dt>avg RGB</dt><dd>${probe.averageRgb.map((value) => value.toFixed(1)).join(', ')}</dd>` : ''}
       ${probe.error ? `<dt>note</dt><dd>${probe.error}</dd>` : ''}
     `;
@@ -725,9 +733,11 @@ function renderBench() {
   ) => {
     const mode = previewMode;
     const frame = createI420P10Frame(data, track.width, track.height, 'full');
+    report.rawFrameStats = inspectI420P10Frame(frame);
     const cpuPreview = convertRawFrameForPreview(data, track, mode);
     updateSdrPreviewStatus([
       `${previewModeLabel(mode)} decoded at ${formatPreviewSeconds(seekSeconds)}`,
+      `Raw Y ${report.rawFrameStats.y.min}-${report.rawFrameStats.y.max}, avg ${report.rawFrameStats.y.average.toFixed(1)}`,
       'Preparing WebGPU render',
       'Keeping previous preview until the selected SDR frame is ready',
     ]);
@@ -773,9 +783,21 @@ function renderBench() {
     });
     if (version !== selectionVersion) return;
     updateGpuRenderMeta(gpuRender.probe);
-    if (gpuRender.preview) {
+    const gpuBlackButCpuVisible = Boolean(
+      gpuRender.preview
+      && gpuRender.preview.stats.nonBlackPixels === 0
+      && cpuPreview.stats.nonBlackPixels > 0,
+    );
+    if (gpuRender.preview && !gpuBlackButCpuVisible) {
       drawSdrPreview(gpuRender.preview, mode, seekSeconds, decodeElapsedMs, 'webgpu');
     } else {
+      if (gpuBlackButCpuVisible) {
+        updateGpuRenderMeta({
+          ...gpuRender.probe,
+          ok: false,
+          error: 'WebGPU render returned a black frame while CPU raw preview is non-black; showing CPU fallback.',
+        });
+      }
       drawSdrPreview(cpuPreview, mode, seekSeconds, decodeElapsedMs, 'cpu');
     }
   };
@@ -1155,6 +1177,7 @@ function renderBench() {
     report.rpuMetadata = null;
     report.gpuUpload = null;
     report.gpuRender = null;
+    report.rawFrameStats = null;
     report.sdrPreview = null;
     report.referenceCompare = null;
     report.referenceDiagnosis = null;

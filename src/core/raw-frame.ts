@@ -36,6 +36,21 @@ export interface SdrPreviewImage {
 
 export type RawPreviewMode = 'sdr-approx' | 'raw-luma' | 'dv-p5-base';
 
+export interface RawPlaneStats {
+  min: number;
+  max: number;
+  average: number;
+  nonZeroSamples: number;
+  sampledSamples: number;
+  firstSamples: number[];
+}
+
+export interface RawFrameStats {
+  y: RawPlaneStats;
+  u: RawPlaneStats;
+  v: RawPlaneStats;
+}
+
 export function expectedI420P10ByteLength(width: number, height: number): number {
   const chromaWidth = Math.ceil(width / 2);
   const chromaHeight = Math.ceil(height / 2);
@@ -71,6 +86,55 @@ function clamp01(value: number): number {
 function readU16LE(data: Uint8Array, sampleIndex: number): number {
   const byteOffset = sampleIndex * 2;
   return data[byteOffset] | (data[byteOffset + 1] << 8);
+}
+
+function inspectPlane(
+  frame: I420P10Frame,
+  sourceOffset: number,
+  stride: number,
+  width: number,
+  height: number,
+  maxSamples = 200_000,
+): RawPlaneStats {
+  const totalSamples = width * height;
+  const step = Math.max(1, Math.floor(totalSamples / maxSamples));
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+  let sum = 0;
+  let nonZeroSamples = 0;
+  let sampledSamples = 0;
+  const firstSamples: number[] = [];
+
+  for (let sample = 0; sample < totalSamples; sample += step) {
+    const y = Math.floor(sample / width);
+    const x = sample - y * width;
+    const value = readU16LE(frame.data, sourceOffset + y * stride + x) & 0x03ff;
+    min = Math.min(min, value);
+    max = Math.max(max, value);
+    sum += value;
+    if (value !== 0) nonZeroSamples += 1;
+    if (firstSamples.length < 12) firstSamples.push(value);
+    sampledSamples += 1;
+  }
+
+  return {
+    min: Number.isFinite(min) ? min : 0,
+    max: Number.isFinite(max) ? max : 0,
+    average: sampledSamples > 0 ? sum / sampledSamples : 0,
+    nonZeroSamples,
+    sampledSamples,
+    firstSamples,
+  };
+}
+
+export function inspectI420P10Frame(frame: I420P10Frame): RawFrameStats {
+  const chromaWidth = Math.ceil(frame.width / 2);
+  const chromaHeight = Math.ceil(frame.height / 2);
+  return {
+    y: inspectPlane(frame, frame.yOffset, frame.yStride, frame.width, frame.height),
+    u: inspectPlane(frame, frame.uOffset, frame.uvStride, chromaWidth, chromaHeight),
+    v: inspectPlane(frame, frame.vOffset, frame.uvStride, chromaWidth, chromaHeight),
+  };
 }
 
 function srgbEncode(linear: number): number {
