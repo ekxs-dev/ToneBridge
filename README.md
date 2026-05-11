@@ -6,6 +6,31 @@ LumaBridge is a browser-side Dolby Vision Profile 5 to SDR preview and verificat
 
 This is an engineering and verification project, not a finished production transcoder.
 
+## Distance From Usable Playback
+
+The current stage is closer to a verification bench and diagnostic tool than a day-to-day DV P5 to SDR player.
+
+What is usable today:
+
+- Decode a selected timestamp into a raw `I420P10` frame.
+- Inspect Raw luma / DV P5 base / PQ SDR approximation previews.
+- Compare the current raw WebGPU preview against a libplacebo PNG reference.
+- Use fast opaque previews to confirm browser decode speed, motion, and visibility.
+- Use the low-FPS ffmpeg.wasm chunk fallback for rough visual tracking.
+
+What is not usable yet:
+
+- Correct-color 4K DV P5 playback at 24/30/60fps.
+- Stable raw `I420P10` plane access in a pure Chrome/WebCodecs path.
+- A full replacement for libplacebo DV reshape, gamut mapping, and tone mapping.
+
+The main blockers are:
+
+- Chrome/WebCodecs needs to expose HEVC Main10 / DV P5 frames as raw `I420P10`, or provide equivalent high-bit-depth raw access.
+- `ffmpeg.wasm` or another browser-side decoder path needs a large performance jump; otherwise the raw path is limited to single-frame, short-clip, and low-FPS diagnostics.
+
+Without one of those improvements, the practical correct path is a native helper or server-side decode/conversion pipeline, with the browser handling UI, metadata, WebGPU preview, and verification.
+
 ## Current Status
 
 The current implementation can:

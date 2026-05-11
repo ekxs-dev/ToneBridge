@@ -4,6 +4,31 @@
 
 LumaBridge 是一个网页端 Dolby Vision Profile 5 到 SDR 的预览与验证工具。项目重点不是做一个已经完成的生产级转码器，而是验证网页技术栈能否拿到 raw 10-bit video frame、解析 Dolby Vision RPU metadata，并通过 WebGPU 做可对齐的 SDR 诊断渲染。
 
+## 离可用还有多远
+
+当前阶段更接近“验证台”和“诊断工具”，还不是一个可日常使用的 DV P5 转 SDR 播放器。
+
+现在能稳定使用的是：
+
+- 选择某个时间点，解出 raw `I420P10` 单帧。
+- 查看 Raw luma / DV P5 base / PQ SDR approximation 诊断预览。
+- 把当前 raw WebGPU 预览和 libplacebo PNG 参考图做误差对比。
+- 用 fast opaque preview 快速确认浏览器能否正常解码和显示运动画面。
+- 用低帧率 ffmpeg.wasm chunk fallback 做粗略跟踪。
+
+现在还不能做到：
+
+- 4K DV P5 正确色彩的 24/30/60fps 实时播放。
+- 纯 Chrome 路径下稳定拿到 `I420P10` raw planes。
+- 完整替代 libplacebo 的 DV reshape、gamut mapping 和 tone mapping。
+
+离真正可用主要卡在两件事：
+
+- Chrome/WebCodecs 需要稳定暴露 HEVC Main10 / DV P5 的 raw `I420P10` frame，或者允许等价的高位深 raw access。
+- `ffmpeg.wasm` 或其他浏览器内解码方案需要有数量级性能提升，否则 raw 路径只能做单帧、短片段和低帧率诊断。
+
+如果没有这两类能力提升，正确路径更现实的落地方式是 native helper 或服务端解码/转换；浏览器端继续负责 UI、metadata、WebGPU 预览和验证。
+
 ## 当前状态
 
 当前实现已经可以：

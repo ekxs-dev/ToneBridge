@@ -21,6 +21,41 @@
 
 但当前还不是完整、参考级对齐的 DV P5 到 SDR 转换器。
 
+## 离真正可用的距离
+
+当前项目已经可以作为单帧和短片段诊断工具使用，但距离“打开一个 DV P5 文件并以正确 SDR 色彩流畅播放”还很远。
+
+现在比较可靠的是：
+
+```text
+选中时间点
+  -> ffmpeg.wasm 解 raw I420P10
+  -> 解析对应 RPU
+  -> WebGPU 渲染一帧 SDR 诊断图
+  -> 手动和 libplacebo PNG 对比
+```
+
+也就是说，当前适合：
+
+- 单帧检查。
+- 低帧率预览。
+- shader / metadata / reference 对齐。
+- 观察浏览器 WebCodecs 是否能快速显示 opaque frame。
+
+当前不适合：
+
+- 4K 24/30/60fps 正确 SDR 播放。
+- 用 Chrome opaque frame 判断颜色正确性。
+- 在浏览器内直接替代 libplacebo。
+
+继续推进到可用播放，至少需要下面其中一个条件成立：
+
+- Chrome/WebCodecs 未来能为 HEVC Main10 / DV P5 暴露 raw `I420P10` 或等价高位深 frame access。
+- `ffmpeg.wasm`、WASM decoder 或浏览器内解码能力有明显性能提升。
+- 项目引入 native helper 或服务端管线，把 HEVC Main10 解码和/或 DV 色彩转换放到浏览器外。
+
+在这些条件满足前，本阶段的合理定位是：**网页端 DV P5 SDR 研究、调试和单帧验证工具**。
+
 ## 关键判断
 
 Chrome 对当前测试的 HEVC/DV P5 文件可以走 WebCodecs 解码，但输出是 opaque frame：
