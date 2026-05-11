@@ -53,6 +53,29 @@ import {
 } from './core/reference-compare';
 
 const app = document.querySelector<HTMLDivElement>('#app');
+const appBase = import.meta.env.BASE_URL;
+
+function appHref(path: '/' | '/bench'): string {
+  if (path === '/') return appBase;
+  return `${appBase}${path.slice(1)}/`;
+}
+
+function currentRoute(): string {
+  const base = appBase.endsWith('/') ? appBase : `${appBase}/`;
+  const baseWithoutTrailingSlash = base.replace(/\/$/, '');
+  const { pathname } = location;
+
+  if (baseWithoutTrailingSlash && baseWithoutTrailingSlash !== '/' && pathname === baseWithoutTrailingSlash) {
+    return '/';
+  }
+
+  if (base !== '/' && pathname.startsWith(base)) {
+    const route = pathname.slice(base.length);
+    return route ? `/${route.replace(/\/$/, '')}` : '/';
+  }
+
+  return pathname.replace(/\/$/, '') || '/';
+}
 
 function statusClass(ok: boolean): string {
   return ok ? 'status status-ok' : 'status status-warn';
@@ -70,7 +93,7 @@ async function renderHome() {
           <p class="eyebrow">LumaBridge</p>
           <h1>DV P5 to SDR verification console</h1>
         </div>
-        <a class="link-button" href="/bench">Open benchmark</a>
+        <a class="link-button" href="${appHref('/bench')}">Open benchmark</a>
       </section>
 
       <section class="panel grid">
@@ -194,7 +217,7 @@ function renderBench() {
           <p class="eyebrow">Benchmark</p>
           <h1>Pipeline timing report</h1>
         </div>
-        <a class="link-button" href="/">Back to console</a>
+        <a class="link-button" href="${appHref('/')}">Back to console</a>
       </section>
       <section class="panel bench-picker">
         <div>
@@ -1617,7 +1640,7 @@ function renderBench() {
   });
 }
 
-if (location.pathname === '/bench') {
+if (currentRoute() === '/bench') {
   renderBench();
 } else {
   renderHome();

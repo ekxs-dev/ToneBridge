@@ -28,6 +28,7 @@
 - Install JS dependencies with `npm install`.
 - Start the dev server with `npm run dev`.
 - Open the benchmark page at `/bench`.
+- Build the GitHub Pages artifact with `npm run build:pages`; it uses Vite base `/LumaBridge/` and copies `dist/index.html` to `dist/bench/index.html`.
 - Vite dev/preview responses intentionally set COOP/COEP/CORP/OAC headers so `crossOriginIsolated === true` and `@ffmpeg/core-mt` can use `SharedArrayBuffer`.
 - Run Rust tests with `npm run test:rust`.
 - Rebuild the generated Rust/WASM browser package with `npm run build:wasm`.
@@ -97,6 +98,7 @@ npm run test:rust
 - The fast WebCodecs canvas preview and fast WebGPU opaque preview start from the current `/bench` seconds control. They decode from the nearest previous sync sample, skip pre-roll frames before the requested timestamp, and report both the requested time and the first drawn timestamp. The fast WebGPU opaque preview is paced by `VideoFrame.timestamp` and defaults to up to 720 frames / 30 seconds, but actual duration is limited by the parsed sample window. Large MKV inputs are still prefix-parsed, so the current user sample can only preview the samples available in the 16 MB prefix until streaming Matroska demux is implemented.
 - `/bench` has a "Realtime preview" control for the currently feasible browser path. Today it runs a wall-clock ffmpeg.wasm fallback loop with target FPS clamped to 0.25-4fps and defaulting to 0.25fps for 4K safety, skips ahead when decode/render is slower than target, and records effective FPS/dropped-frame estimates. The fallback now decodes short raw I420P10 segments instead of seeking once per displayed frame: segment size is capped at 12 frames and roughly 96MB raw output, and it can apply an `fps=` filter for low-FPS diagnostics. This is useful for interactive visual tracking, but it is not strict 24fps DV playback. Strict realtime still requires WebCodecs streaming decode plus `VideoFrame.copyTo()` I420P10 frames.
 - `src/core/decoder-adapter.ts` now prefers `@ffmpeg/core-mt` when the runtime is cross-origin isolated, then falls back to single-thread `@ffmpeg/core`. The mt loader uses raw ESM JS Blob URLs for the core and pthread worker so Vite dev HMR imports do not break classic pthread workers. Local Chrome probe on `/bench` reported `crossOriginIsolated: true`, `core: "multi-thread"`, `threaded: true`, and about 130 ms loader time without a media file.
+- GitHub Pages deploys from `.github/workflows/pages.yml` to `https://ekxs-dev.github.io/LumaBridge/`. Pages is useful for hosted capability/UI checks, but it cannot set the COOP/COEP headers required for `SharedArrayBuffer`, so the hosted demo may fall back to single-thread `ffmpeg.wasm`; prefer local `npm run dev` for `@ffmpeg/core-mt` diagnostics.
 - `/bench` reports WebCodecs raw access explicitly. `strict I420P10 raw path` is the only browser path considered eligible for correct DV P5 SDR. `VideoFrame.format === null` is reported as `preview-only opaque frame`, even when WebCodecs decode itself succeeds, because raw `allocationSize()/copyTo()` planes are unavailable.
 - HEVC WebCodecs codec strings are generated from hvcC with profile-compatibility flags converted into codec-string bit order. `/bench` also probes strict and relaxed HEVC candidates (`hev1`/`hvc1`, full constraints/`B0`) before selecting ffmpeg.wasm fallback, because over-specific constraint bits can make `VideoDecoder.isConfigSupported()` reject an otherwise decodable HEVC Main10 stream.
 - `tests/unit/rpu-metadata.test.ts` now checks compact RPU metadata against FFmpeg Dolby Vision side-data fields for the first fixture frame: matrices, offsets, source PQ, pivots, and polynomial coefficients. If that test is green, the largest libplacebo gap is more likely in WGSL sampling/reshape/tone/gamut mapping or frame/RPU alignment than in Rust metadata packing.
@@ -172,6 +174,7 @@ npm run test:rust
 - [x] Start fast WebCodecs/WebGPU previews from the selected `/bench` timestamp instead of always starting at the parsed sample window beginning.
 - [x] Remove failed external-texture recovery modes and keep only opaque RGB speed/visibility preview.
 - [x] Fold current-stage status notes into the README files.
+- [x] Add GitHub Pages workflow and README links.
 - [x] Add explicit WebCodecs raw-access classification so opaque `format === null` frames are labeled preview-only.
 - [x] Replace ffmpeg.wasm realtime fallback seek-per-frame loop with short raw-segment decode chunks.
 - [ ] Implement strict WebCodecs streaming realtime path: demux sample stream -> `VideoDecoder` -> `VideoFrame.copyTo()` -> WebGPU render.

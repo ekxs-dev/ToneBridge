@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -p tsconfig.json && vite build",
+    "build:pages": "tsc -p tsconfig.json && vite build --base=/LumaBridge/ && node scripts/create-pages-routes.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",

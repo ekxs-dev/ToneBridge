@@ -6,6 +6,13 @@ LumaBridge is a browser-side Dolby Vision Profile 5 to SDR preview and verificat
 
 This is an engineering and verification project, not a finished production transcoder.
 
+## Live Demo
+
+- App: <https://ekxs-dev.github.io/LumaBridge/>
+- Benchmark page: <https://ekxs-dev.github.io/LumaBridge/bench/>
+
+The GitHub Pages build is useful for capability checks and UI testing. GitHub Pages does not provide the COOP/COEP headers required for `SharedArrayBuffer`, so the hosted demo may fall back to single-thread `ffmpeg.wasm`. Use local development for the best diagnostic path with `@ffmpeg/core-mt`.
+
 ## Distance From Usable Playback
 
 The current stage is closer to a verification bench and diagnostic tool than a day-to-day DV P5 to SDR player.
@@ -214,10 +221,23 @@ The Vite dev server intentionally sends cross-origin isolation headers so `@ffmp
 ```bash
 npm run test
 npm run build
+npm run build:pages
 npm run test:e2e
 npm run test:rust
 npm run build:wasm
 ```
+
+## GitHub Pages
+
+The repository deploys to GitHub Pages from `.github/workflows/pages.yml` on every push to `main`.
+
+The Pages build uses:
+
+```bash
+npm run build:pages
+```
+
+The workflow uploads `dist/` with the base path set to `/LumaBridge/` and includes a static `/bench/` route copy for direct benchmark-page links.
 
 ## Repository Layout
 
