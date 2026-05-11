@@ -180,7 +180,7 @@ http://127.0.0.1:5173/bench
 
 建议检查：
 
-- 选择 `/path/to/input.mkv`。
+- 选择本地 DV P5 测试文件。
 - 确认 fallback 显示 `ffmpeg.wasm`，并且有 `multi-thread, threaded, isolated`。
 - 用 selected timestamp 渲染 raw `I420P10` WebGPU 诊断帧。
 - fast opaque preview 只用于速度和可见性，不用于判断颜色正确性。
@@ -196,4 +196,3 @@ npm run test:rust
 ```
 
 本阶段收口前，上面四个命令都应通过。
-

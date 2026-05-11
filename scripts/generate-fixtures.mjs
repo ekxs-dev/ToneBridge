@@ -1,7 +1,11 @@
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 
-const source = process.env.LUMABRIDGE_SOURCE ?? '/path/to/input.mkv';
+const source = process.env.LUMABRIDGE_SOURCE;
+
+if (!source) {
+  throw new Error('Set LUMABRIDGE_SOURCE=/path/to/source.mkv before running fixture generation.');
+}
 
 function run(command, args) {
   const result = spawnSync(command, args, { stdio: 'inherit' });

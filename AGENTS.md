@@ -19,7 +19,7 @@
 - `tests/fixtures/`: Small versioned media fixtures.
 - `tests/references/`: Golden metadata/reference outputs.
 - `docs/current-stage-status.md`: current phase summary, browser-path conclusions, known gaps, and manual testing notes.
-- `scripts/generate-fixtures.mjs`: Regenerates fixtures from `LUMABRIDGE_SOURCE` or `/path/to/input.mkv`.
+- `scripts/generate-fixtures.mjs`: Regenerates fixtures from `LUMABRIDGE_SOURCE`.
 - `source/`: ignored reference source tree, currently used for local libplacebo study. Do not include it in normal changes.
 
 ## Dev Environment Tips
@@ -68,7 +68,7 @@ npm run test:rust
 
 ## Fixture And Reference Constraints
 - Keep fixtures small enough for repository smoke tests.
-- Current DV fixture was cut from `/path/to/input.mkv`.
+- Current DV fixture was cut from a local DV P5 source file.
 - `dv_p5_short.mp4` is HEVC Main10 DV P5 with RPU NAL units.
 - Current golden RPU count for `tests/fixtures/dv_p5_short.mp4`: `154`.
 - `sdr_reference.png` is generated with FFmpeg/libplacebo as the SDR reference frame. The current command uses `color_trc=bt709`, which libplacebo maps as a BT.1886 display curve, and no explicit 100 nit target override.
@@ -102,15 +102,15 @@ npm run test:rust
 - The browser WASM package is built with rustup stable + `wasm32-unknown-unknown` and `wasm-bindgen-cli` 0.2.121 via `npm run build:wasm`.
 - WGSL currently contains a debug compute path and simplified preview modes. It now applies ABI v2 RPU reshape metadata for diagnostics, the MMR basis terms and coefficient padding match libplacebo's `x*y`, `x*z`, `y*z`, `x*y*z` layout, the DV decode offset follows libplacebo's full-range `1024/1023` normalization, the DV nonlinear matrix output only clamps the lower bound before PQ EOTF like libplacebo, the DV post step avoids an extra PQ OETF/EOTF round trip, and the SDR diagnostic tone map uses a BT.2390-style IPT/PQ path using Level 1 max PQ when present instead of the old Reinhard path. For practical comparison against the current FFmpeg/libplacebo PNG command, WebGPU/CPU SDR diagnostics use libplacebo's default `PL_COLOR_SDR_WHITE = 203 nit`, force PQ black to `PL_COLOR_HDR_BLACK`, use an SDR black point of white/1000, apply the libplacebo softclip formula to BT.709 linear RGB highlights, and write BT.1886-style output for `color_trc=bt709`; raw luma remains an sRGB-ish structural diagnostic. The raw WebGPU preview samples luma/chroma bilinearly and assumes the current fixtures' `AVCHROMA_LOC_LEFT` 4:2:0 chroma siting. The result is not yet full libplacebo/reference validated.
 - Current libplacebo gap focus: `pl_shader_dovi_reshape` and the packed RPU fields now have good coverage, so the next largest known mismatch is the simplified WebGPU color-map/gamut path after DV decode. libplacebo's DV decode path is reshape -> nonlinear matrix/offset -> PQ EOTF -> `(HPE LMS->BT.2020 * linear matrix)` -> PQ OETF -> full `pl_shader_color_map_ex`; our WGSL now has the BT.2390/IPT path plus RGB softclip, but does not yet implement libplacebo's perceptual gamut 3D LUT or hue/saturation remapping.
-- 8.5s manual diagnostic on `/path/to/input.mkv`: native FFmpeg/libplacebo reference is green, fast external-texture recovery modes are white/cyan because Chrome exposes only opaque bt709-ish `VideoFrame`s, while the ffmpeg.wasm raw I420P10 WebGPU diagnostics produce a green logo but still diverge from libplacebo in edge/channel details. Local `artifacts/` screenshots/results were deleted at the user's request and should stay untracked unless explicitly requested.
-- 8.5s realtime fallback smoke on `/path/to/input.mkv`: 4K-ish 3840x1608 at target 0.25fps decoded a 2-frame I420P10 segment in about 2.5s, producing 37,048,320 raw bytes. This confirms the segment path avoids repeated seek-per-frame work, but it remains a low-FPS diagnostic fallback rather than true realtime playback.
+- 8.5s manual diagnostic on the large local DV P5 sample: native FFmpeg/libplacebo reference is green, fast external-texture recovery modes are white/cyan because Chrome exposes only opaque bt709-ish `VideoFrame`s, while the ffmpeg.wasm raw I420P10 WebGPU diagnostics produce a green logo but still diverge from libplacebo in edge/channel details. Local `artifacts/` screenshots/results were deleted at the user's request and should stay untracked unless explicitly requested.
+- 8.5s realtime fallback smoke on the large local DV P5 sample: 4K-ish 3840x1608 at target 0.25fps decoded a 2-frame I420P10 segment in about 2.5s, producing 37,048,320 raw bytes. This confirms the segment path avoids repeated seek-per-frame work, but it remains a low-FPS diagnostic fallback rather than true realtime playback.
 - Chrome currently rejects `meta` and `target` as WGSL identifiers. Keep shader locals and function parameters away from reserved keywords; `tests/unit/wgsl.test.ts` guards these regressions that broke `/bench` WebGPU rendering.
 
 ## PR / Commit Guidance
 - Suggested title format: `[lumabridge] <Title>`.
 - Keep changes scoped. Avoid touching `source/` unless the task explicitly concerns the reference source tree.
 - Do not commit generated `dist/`, `node_modules/`, Playwright reports, or Rust `target/`.
-- If changing public test fixtures, update `tests/README.md` and the golden assertions together.
+- If changing public test fixtures, update fixture/reference documentation and the golden assertions together.
 
 ## TODO
 - [x] Add real MP4 track/sample metadata parser for benchmark file selection.
